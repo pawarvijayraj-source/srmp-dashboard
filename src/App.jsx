@@ -514,6 +514,7 @@ const RSA_LIST = [
 export default function App() {
   const { dsb2023, dsb2018, loi, loading, error, lastFetched, refresh } = useGoogleSheets();
   const [activeTab, setActiveTab] = useState('all');
+  const [selectedStage, setSelectedStage] = useState(null);
 
   const allModule1 = useMemo(() => [...dsb2023, ...dsb2018], [dsb2023, dsb2018]);
   const allRows = useMemo(() => [...allModule1, ...loi], [allModule1, loi]);
@@ -651,23 +652,75 @@ export default function App() {
 
         {/* M1 PIPELINE */}
         <div style={{ background: '#fff', borderRadius: 12, padding: 14, border: '1px solid #E8ECF0' }}>
-          <div style={{ fontWeight: 700, fontSize: 13, color: '#1F4E79', marginBottom: 10 }}>📊 M1 Pipeline</div>
-          {['Draw of Lots', 'ISD & DOC Pending', 'Group 3', 'ASC Pending', 'LEC Pending', 'FVC Pending', 'LOI Issued'].map(s => {
-            const count = allModule1.filter(r => r._normalisedStatus === s).length;
-            const max = Math.max(1, ...['Draw of Lots', 'ISD & DOC Pending', 'Group 3', 'ASC Pending', 'LEC Pending', 'FVC Pending', 'LOI Issued'].map(st => allModule1.filter(r => r._normalisedStatus === st).length));
-            const color = s === 'LOI Issued' ? '#4CAF7D' : '#2E75B6';
-            return (
-              <div key={s} style={{ marginBottom: 7 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 2 }}>
-                  <span style={{ color: '#555' }}>{s}</span>
-                  <span style={{ fontWeight: 600, color: '#1F4E79' }}>{count}</span>
+          <div style={{ fontWeight: 700, fontSize: 13, color: '#1F4E79', marginBottom: 10, display: 'flex', justifyContent: 'space-between' }}>
+            <span>📊 M1 Pipeline</span>
+            {selectedStage && <span onClick={() => setSelectedStage(null)} style={{ fontSize: 11, color: '#378ADD', cursor: 'pointer' }}>← Back</span>}
+          </div>
+
+          {!selectedStage ? (
+            // Stage list view
+            ['Draw of Lots', 'ISD & DOC Pending', 'Group 3', 'ASC Pending', 'LEC Pending', 'FVC Pending', 'LOI Issued'].map(s => {
+              const count = allModule1.filter(r => r._normalisedStatus === s).length;
+              const max = Math.max(1, ...['Draw of Lots', 'ISD & DOC Pending', 'Group 3', 'ASC Pending', 'LEC Pending', 'FVC Pending', 'LOI Issued'].map(st => allModule1.filter(r => r._normalisedStatus === st).length));
+              const color = s === 'LOI Issued' ? '#4CAF7D' : '#2E75B6';
+              return (
+                <div key={s} onClick={() => count > 0 && setSelectedStage(s)}
+                  style={{ marginBottom: 7, cursor: count > 0 ? 'pointer' : 'default', padding: '4px 6px', borderRadius: 6, transition: 'background 0.15s' }}
+                  onMouseEnter={e => { if (count > 0) e.currentTarget.style.background = '#F0F4FA'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 2 }}>
+                    <span style={{ color: '#555' }}>{s}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontWeight: 600, color: '#1F4E79' }}>{count}</span>
+                      {count > 0 && <span style={{ fontSize: 9, color: '#aaa' }}>▶</span>}
+                    </div>
+                  </div>
+                  <div style={{ height: 3, background: '#EEF2F7', borderRadius: 2, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${(count / max) * 100}%`, background: color, borderRadius: 2 }} />
+                  </div>
                 </div>
-                <div style={{ height: 3, background: '#EEF2F7', borderRadius: 2, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${(count / max) * 100}%`, background: color, borderRadius: 2 }} />
-                </div>
+              );
+            })
+          ) : (
+            // Drill-down case list
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#1F4E79', marginBottom: 8, padding: '4px 6px', background: '#F0F4FA', borderRadius: 6 }}>
+                {selectedStage} — {allModule1.filter(r => r._normalisedStatus === selectedStage).length} cases
               </div>
-            );
-          })}
+              <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+                {allModule1
+                  .filter(r => r._normalisedStatus === selectedStage)
+                  .map((row, i) => {
+                    const alert = row._alert;
+                    const loc = getLocation(row);
+                    const district = row.district || '';
+                    const rsa = row.sales_area || '';
+                    const adv = row.adv_sr_no || row.advt_srno || '';
+                    return (
+                      <div key={i} style={{
+                        borderLeft: `3px solid ${alertColor(alert?.level || 'grey')}`,
+                        background: alertBg(alert?.level || 'grey'),
+                        borderRadius: 6, padding: '7px 9px', marginBottom: 5,
+                      }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: '#1F4E79' }}>
+                          {loc.length > 55 ? loc.slice(0, 55) + '…' : loc}
+                        </div>
+                        <div style={{ fontSize: 10, color: '#888', marginTop: 2, display: 'flex', gap: 8 }}>
+                          {district && <span>{district}</span>}
+                          {rsa && <span>{rsa}</span>}
+                          {adv && <span>#{adv}</span>}
+                        </div>
+                        {alert?.action && alert.action !== selectedStage && (
+                          <div style={{ fontSize: 10, color: alertColor(alert.level), marginTop: 2 }}>
+                            {alert.action}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* MAY-JUNE WATCHLIST */}
