@@ -225,12 +225,33 @@ function SearchPanel({ allRows }) {
   const results = useMemo(() => {
     if (!query || query.length < 2) return [];
     const q = query.toLowerCase();
-    return allRows.filter(r => {
+    
+    // Search all rows
+    const matches = allRows.filter(r => {
       const loc = getLocation(r).toLowerCase();
       const dist = (r.district || r.district_name || '').toLowerCase();
-      const adv = (r.adv_sr_no || r.advt_srno || '').toLowerCase();
+      const adv = (r.adv_sr_no || r.advt_srno || r.adv_sr_no_of_location || '').toLowerCase();
       return loc.includes(q) || dist.includes(q) || adv.includes(q);
-    }).slice(0, 6);
+    });
+
+    // Deduplicate — prefer LOI_PENDING record over DSB record
+    const seen = new Map();
+    matches.forEach(r => {
+      const advKey = (r.adv_sr_no || r.advt_srno || r.adv_sr_no_of_location || '').trim().toUpperCase();
+      const locKey = getLocation(r).trim().toLowerCase();
+      const key = advKey || locKey;
+      
+      if (!seen.has(key)) {
+        seen.set(key, r);
+      } else {
+        // Prefer LOI_PENDING over DSB records
+        if (r._source === 'LOI_PENDING') {
+          seen.set(key, r);
+        }
+      }
+    });
+
+    return Array.from(seen.values()).slice(0, 6);
   }, [query, allRows]);
 
   return (
