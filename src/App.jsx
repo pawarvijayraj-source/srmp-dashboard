@@ -251,7 +251,17 @@ function SearchPanel({ allRows }) {
       }
     });
 
-    return Array.from(seen.values()).slice(0, 6);
+    // Second pass — deduplicate by location name
+  const byLoc = new Map();
+  Array.from(seen.values()).forEach(r => {
+    const loc = (r.location || r.total_location_529_responce_529_locations_online_application_received_2346_advertisment_dt_28062023_last_date_27092023_date_extension_17102023_corrigendum_date_11082023_closing_date_10112023 || '').trim().toLowerCase().slice(0, 40);
+    const key2 = loc || Math.random();
+      byLoc.set(key2, r);
+    } else if (r._source === 'LOI_PENDING') {
+      byLoc.set(key2, r);
+    }
+  });
+  return Array.from(byLoc.values()).slice(0, 6);
   }, [query, allRows]);
 
   return (
