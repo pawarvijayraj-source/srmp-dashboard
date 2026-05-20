@@ -26,12 +26,29 @@ export function useGoogleSheets() {
     try {
       setData(prev => ({ ...prev, loading: true, error: null }));
 
-      const [res23, res18, resLoi, resWb] = await Promise.all([
+      const [res23, res18, resLoi, resWb, resLec23, resLec18] = await Promise.all([
         axios.get(`${APPS_SCRIPT_URL}?action=dsb2023`),
         axios.get(`${APPS_SCRIPT_URL}?action=dsb2018`),
         axios.get(`${APPS_SCRIPT_URL}?action=loi`),
         axios.get(`${APPS_SCRIPT_URL}?action=writeback`),
+        axios.get(`${APPS_SCRIPT_URL}?action=lec2023`),
+        axios.get(`${APPS_SCRIPT_URL}?action=lec2018`),
       ]);
+
+      // ── Step 0: Build LEC lookup map ──────────────────────
+      const lecRows = [
+        ...(resLec23.data?.rows || []).map(r => ({ ...r, _lecSource: 'LEC_2023' })),
+        ...(resLec18.data?.rows || []).map(r => ({ ...r, _lecSource: 'LEC_2018' })),
+      ];
+
+      const lecByAdvSrNo = new Map();
+      lecRows.forEach(r => {
+        // Try all possible adv sr no column names
+        const advKey = normaliseAdvSrNo(
+          r.adv_sr_no || r.advertisement_sr_no || r.advt_sr_no || r.adv_no || ''
+        );
+        if (advKey) lecByAdvSrNo.set(advKey, r);
+      });
 
       // ── Step 1: Process LOI Pending rows ──────────────────
       const rawLoi = (resLoi.data?.rows || []).filter(r => r.location);
@@ -106,6 +123,8 @@ export function useGoogleSheets() {
         loi,
         loiByAdvSrNo,
         loiByLocation,
+        lecByAdvSrNo,
+        lecRows,
         writeback,
         loading: false,
         error: null,

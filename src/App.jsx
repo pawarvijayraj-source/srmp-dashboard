@@ -512,7 +512,7 @@ const RSA_LIST = [
 
 // ── MAIN APP ─────────────────────────────────────────────────
 export default function App() {
-  const { dsb2023, dsb2018, loi, loading, error, lastFetched, refresh } = useGoogleSheets();
+  const { dsb2023, dsb2018, loi, lecByAdvSrNo, loading, error, lastFetched, refresh } = useGoogleSheets();
   const [activeTab, setActiveTab] = useState('all');
   const [selectedStage, setSelectedStage] = useState(null);
 
@@ -696,6 +696,16 @@ export default function App() {
                     const district = row.district || '';
                     const rsa = row.sales_area || '';
                     const adv = row.adv_sr_no || row.advt_srno || '';
+                    const advKey = adv.trim().toUpperCase();
+                    const lecData = lecByAdvSrNo ? lecByAdvSrNo.get(advKey) : null;
+                    const pendency = lecData ? parseInt(lecData.pendency_of_days || lecData.pendency || '0') : null;
+                    const lecLastDate = lecData ? (lecData.lec_last_date || lecData.lec_letter_last_date || '') : null;
+                    const lecLetterSent = lecData ? (lecData.lec_letter_sent_on || lecData.letter_send || '') : null;
+                    const fileReceived = lecData ? (lecData.lec_file_received_in_office_yesno || lecData.file_received || '') : null;
+                    const m1 = lecData ? (lecData.m1 || '') : null;
+                    const m2 = lecData ? (lecData.m2 || '') : null;
+                    const m3 = lecData ? (lecData.m3 || '') : null;
+                    const lecRemarks = lecData ? (lecData.remarks || lecData['20052026'] || '') : null;
                     return (
                       <div key={i} style={{
                         borderLeft: `3px solid ${alertColor(alert?.level || 'grey')}`,
@@ -713,6 +723,47 @@ export default function App() {
                         {alert?.action && alert.action !== selectedStage && (
                           <div style={{ fontSize: 10, color: alertColor(alert.level), marginTop: 2 }}>
                             {alert.action}
+                          </div>
+                        )}
+
+                        {/* LEC enriched data */}
+                        {lecData && selectedStage === 'LEC Pending' && (
+                          <div style={{ marginTop: 5, paddingTop: 5, borderTop: '1px solid #eee' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 3 }}>
+                              {lecLetterSent && (
+                                <div style={{ fontSize: 10, color: '#666' }}>
+                                  📬 Letter: <span style={{ color: '#333' }}>{lecLetterSent}</span>
+                                </div>
+                              )}
+                              {lecLastDate && (
+                                <div style={{ fontSize: 10, color: '#666' }}>
+                                  📅 Last date: <span style={{ color: pendency < 0 ? '#E24B4A' : '#333', fontWeight: pendency < 0 ? 700 : 400 }}>{lecLastDate}</span>
+                                </div>
+                              )}
+                              {pendency !== null && (
+                                <div style={{ fontSize: 10, fontWeight: 700, color: pendency < 0 ? '#E24B4A' : '#4CAF7D' }}>
+                                  {pendency < 0 ? `🔴 ${Math.abs(pendency)} days overdue` : `🟢 ${pendency} days remaining`}
+                                </div>
+                              )}
+                              {fileReceived && (
+                                <div style={{ fontSize: 10, color: '#666' }}>
+                                  📁 File: <span style={{ color: fileReceived.toUpperCase().includes('YES') ? '#4CAF7D' : '#E24B4A' }}>{fileReceived}</span>
+                                </div>
+                              )}
+                            </div>
+                            {(m1 || m2 || m3) && (
+                              <div style={{ marginTop: 4 }}>
+                                <div style={{ fontSize: 9, color: '#999', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Committee</div>
+                                {m1 && <div style={{ fontSize: 10, color: '#555' }}>M1: {m1}</div>}
+                                {m2 && <div style={{ fontSize: 10, color: '#555' }}>M2: {m2}</div>}
+                                {m3 && m3 !== 'NA' && <div style={{ fontSize: 10, color: '#555' }}>M3: {m3}</div>}
+                              </div>
+                            )}
+                            {lecRemarks && lecRemarks.trim() && (
+                              <div style={{ fontSize: 10, color: '#888', marginTop: 3, fontStyle: 'italic' }}>
+                                📝 {lecRemarks.slice(0, 80)}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
