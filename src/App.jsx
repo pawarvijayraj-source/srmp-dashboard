@@ -1,7 +1,9 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useGoogleSheets } from './hooks/useGoogleSheets';
 import { ALERT_LEVELS, isMyAction, parseTargetMonth } from './logic/alertRules';
 import './App.css';
+
+const APPS_SCRIPT_URL = import.meta.env.VITE_APPS_SCRIPT_URL;
 
 // ── Helpers ─────────────────────────────────────────────────
 const alertColor = (level) => ({
@@ -218,9 +220,174 @@ function CaseDetailCard({ row }) {
 }
 
 // ── SEARCH PANEL ─────────────────────────────────────────────
-function SearchPanel({ allRows }) {
+// ── FORMAT DATE FOR DISPLAY ──────────────────────────────────
+function formatDueDate(str) {
+  if (!str || str.trim() === '') return null;
+  // Expected: DDMMYY HHMM
+  const clean = str.replace(/\s+/g, ' ').trim();
+  const parts = clean.split(' ');
+  if (parts[0] && parts[0].length === 6) {
+    const dd = parts[0].slice(0, 2);
+    const mm = parts[0].slice(2, 4);
+    const yy = parts[0].slice(4, 6);
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const monthName = months[parseInt(mm, 10) - 1] || mm;
+    const time = parts[1] ? `${parts[1].slice(0,2)}:${parts[1].slice(2,4)}` : '';
+    return `${dd} ${monthName} '${yy}${time ? ' ' + time : ''}`;
+  }
+  return str;
+}
+
+function isDueDateOverdue(str) {
+  if (!str || str.trim() === '') return false;
+  const clean = str.replace(/\s+/g, ' ').trim();
+  const parts = clean.split(' ');
+  if (parts[0] && parts[0].length === 6) {
+    const dd = parseInt(parts[0].slice(0, 2));
+    const mm = parseInt(parts[0].slice(2, 4)) - 1;
+    const yy = 2000 + parseInt(parts[0].slice(4, 6));
+    const hh = parts[1] ? parseInt(parts[1].slice(0, 2)) : 23;
+    const min = parts[1] ? parseInt(parts[1].slice(2, 4)) : 59;
+    const due = new Date(yy, mm, dd, hh, min);
+    return due < new Date();
+  }
+  return false;
+}
+
+// ── MEETING NOTE FORM ────────────────────────────────────────
+function MeetingNoteForm({ row, existingNotes, onSaved }) {
+  const [note, setNote] = useState('');
+  const [action, setAction] = useState('');
+  const [dueDate, setDueDate] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const advSrNo = row.adv_sr_no || row.advt_srno || row.adv_sr_no_of_location || '';
+  const location = getLocation(row);
+
+  const handleSave = useCallback(async () => {
+    if (!note.trim()) return;
+    setSaving(true);
+    try {
+      const payload = {
+        action: 'upsert_writeback',
+        data: {
+          adv_sr_no: advSrNo,
+          loi_ref_no: location.slice(0, 50),
+          module_id: 'MEETING_NOTE',
+          macro_stage: 'VISITOR_NOTE',
+          current_micro_stage: new Date().toISOString(),
+          previous_micro_stage: '',
+          pending_owner: 'Vijayraj',
+          responsibility_type: 'PERSONAL',
+          current_stage_start_date: new Date().toLocaleDateString('en-GB'),
+          target_due_date: dueDate.trim(),
+          last_meaningful_progress_date: new Date().toLocaleDateString('en-GB'),
+          next_review_date: dueDate.trim(),
+          risk_level: dueDate.trim() ? 'TRACKED' : 'BACKGROUND',
+          escalation_reason: action.trim(),
+          exception_flag: '',
+          exception_type: 'MEETING_NOTE',
+          remarks: note.trim(),
+          updated_by: 'Vijayraj',
+          updated_on: new Date().toISOString(),
+        }
+      };
+
+      await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      setSaved(true);
+      setNote('');
+      setAction('');
+      setDueDate('');
+      setTimeout(() => { setSaved(false); if (onSaved) onSaved(); }, 2000);
+    } catch (e) {
+      console.error('Save failed', e);
+    }
+    setSaving(false);
+  }, [note, action, dueDate, advSrNo, location, onSaved]);
+
+  return (
+    <div style={{ marginTop: 10, paddingTop: 10, borderTop: '2px dashed #E8ECF0' }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: '#1F4E79', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+        📝 Add Meeting Note
+      </div>
+
+      {/* Previous notes */}
+      {existingNotes && existingNotes.length > 0 && (
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ fontSize: 10, color: '#999', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Last {existingNotes.length} meeting{existingNotes.length > 1 ? 's' : ''}</div>
+          {existingNotes.slice(0, 3).map((n, i) => {
+            const overdue = isDueDateOverdue(n.target_due_date);
+            return (
+              <div key={i} style={{ background: '#F8FAFC', borderRadius: 6, padding: '6px 8px', marginBottom: 4, borderLeft: `3px solid ${n.target_due_date ? (overdue ? '#E24B4A' : '#378ADD') : '#ddd'}` }}>
+                <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>
+                  {new Date(n.updated_on || n.current_stage_start_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })}
+                  {n.target_due_date && (
+                    <span style={{ marginLeft: 8, color: overdue ? '#E24B4A' : '#378ADD', fontWeight: 700 }}>
+                      {overdue ? '🔴 Overdue' : '📅'} {formatDueDate(n.target_due_date)}
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: 11, color: '#333' }}>{n.remarks}</div>
+                {n.escalation_reason && (
+                  <div style={{ fontSize: 10, color: '#EF9F27', marginTop: 2 }}>⚡ {n.escalation_reason}</div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <textarea
+        value={note}
+        onChange={e => setNote(e.target.value)}
+        placeholder="Meeting notes... (e.g. Candidate says DM NOC will come by 30th)"
+        rows={2}
+        style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #ddd', fontSize: 12, resize: 'none', boxSizing: 'border-box', outline: 'none', marginBottom: 5 }}
+      />
+      <input
+        value={action}
+        onChange={e => setAction(e.target.value)}
+        placeholder="Action to take... (optional)"
+        style={{ width: '100%', padding: '5px 8px', borderRadius: 6, border: '1px solid #ddd', fontSize: 12, boxSizing: 'border-box', outline: 'none', marginBottom: 5 }}
+      />
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <input
+          value={dueDate}
+          onChange={e => setDueDate(e.target.value)}
+          placeholder="Due: DDMMYY HHMM (optional)"
+          style={{ flex: 1, padding: '5px 8px', borderRadius: 6, border: '1px solid #ddd', fontSize: 12, boxSizing: 'border-box', outline: 'none' }}
+        />
+        <button
+          onClick={handleSave}
+          disabled={saving || !note.trim()}
+          style={{
+            padding: '5px 14px', borderRadius: 6, border: 'none', cursor: note.trim() ? 'pointer' : 'not-allowed',
+            background: saved ? '#4CAF7D' : '#1F4E79', color: '#fff', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
+          }}>
+          {saved ? '✅ Saved!' : saving ? '...' : 'Save'}
+        </button>
+      </div>
+      {dueDate && (
+        <div style={{ fontSize: 10, color: '#378ADD', marginTop: 3 }}>
+          📅 Will appear in To-Do list: {formatDueDate(dueDate)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── SEARCH PANEL ─────────────────────────────────────────────
+function SearchPanel({ allRows, writeback }) {
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const results = useMemo(() => {
     if (!query || query.length < 2) return [];
@@ -246,6 +413,21 @@ function SearchPanel({ allRows }) {
 
     return Array.from(seen.values()).slice(0, 6);
   }, [query, allRows]);
+
+  // Get meeting notes for selected row
+  const meetingNotes = useMemo(() => {
+    if (!selected || !writeback) return [];
+    const advKey = (selected.adv_sr_no || selected.advt_srno || selected.adv_sr_no_of_location || '').trim().toUpperCase();
+    const locKey = getLocation(selected).trim().toLowerCase().slice(0, 50);
+    return writeback
+      .filter(n => {
+        if (n.module_id !== 'MEETING_NOTE') return false;
+        const nAdv = (n.adv_sr_no || '').trim().toUpperCase();
+        const nLoc = (n.loi_ref_no || '').trim().toLowerCase();
+        return (advKey && nAdv === advKey) || (locKey && nLoc.includes(locKey.slice(0, 20)));
+      })
+      .sort((a, b) => new Date(b.updated_on) - new Date(a.updated_on));
+  }, [selected, writeback, refreshKey]);
 
   return (
     <div>
@@ -283,13 +465,18 @@ function SearchPanel({ allRows }) {
         );
       })}
       {selected && (
-        <div>
+        <div style={{ maxHeight: 480, overflowY: 'auto' }}>
           <button
             onClick={() => setSelected(null)}
             style={{ fontSize: 11, color: '#378ADD', background: 'none', border: 'none', cursor: 'pointer', marginBottom: 6, padding: 0 }}>
             ← Back to results
           </button>
           <CaseDetailCard row={selected} />
+          <MeetingNoteForm
+            row={selected}
+            existingNotes={meetingNotes}
+            onSaved={() => setRefreshKey(k => k + 1)}
+          />
         </div>
       )}
       {query.length >= 2 && results.length === 0 && !selected && (
@@ -512,18 +699,55 @@ const RSA_LIST = [
 
 // ── MAIN APP ─────────────────────────────────────────────────
 export default function App() {
-  const { dsb2023, dsb2018, loi, lecByAdvSrNo, loading, error, lastFetched, refresh } = useGoogleSheets();
+  const { dsb2023, dsb2018, loi, lecByAdvSrNo, writeback, loading, error, lastFetched, refresh } = useGoogleSheets();
   const [activeTab, setActiveTab] = useState('all');
   const [selectedStage, setSelectedStage] = useState(null);
 
   const allModule1 = useMemo(() => [...dsb2023, ...dsb2018], [dsb2023, dsb2018]);
   const allRows = useMemo(() => [...allModule1, ...loi], [allModule1, loi]);
 
-  const myActions = useMemo(() =>
-    allRows.filter(r => r._alert && isMyAction(r._alert))
-      .sort((a, b) => (a._alert?.priority || 99) - (b._alert?.priority || 99)),
-    [allRows]
-  );
+  const myActions = useMemo(() => {
+    // Smart filter — only genuine interventions needed from Vijayraj
+    // Exclude: generic data gaps, cases where downstream evidence exists
+    return allRows.filter(r => {
+      const alert = r._alert;
+      if (!alert) return false;
+      if (alert.level === ALERT_LEVELS.GREY) return false;
+      if (alert.priority >= 20) return false; // progressed to M2
+
+      // For LOI cases — only flag if genuinely blocked, not just data gaps
+      if (r._source === 'LOI_PENDING') {
+        const hasDownstreamEvidence = 
+          r.drawing_prepared === 'YES' ||
+          (r.noc_applied_yes && r.noc_applied_yes !== '') ||
+          (r.peso_ca_status && r.peso_ca_status !== '') ||
+          (r.pwdnh_noc_available && r.pwdnh_noc_available !== '') ||
+          r.io_obtained_yes_no === 'YES';
+        
+        // Only show Mojni alert if NO downstream evidence
+        if (alert.action && alert.action.includes('Mojni') && hasDownstreamEvidence) return false;
+      }
+
+      return isMyAction(alert);
+    }).sort((a, b) => (a._alert?.priority || 99) - (b._alert?.priority || 99));
+  }, [allRows]);
+
+  // My To-Do — meeting notes with due dates
+  const myTodos = useMemo(() => {
+    if (!writeback) return [];
+    return writeback
+      .filter(n => n.module_id === 'MEETING_NOTE' && n.target_due_date && n.target_due_date.trim() !== '')
+      .sort((a, b) => {
+        const parseDate = (str) => {
+          if (!str || str.length < 6) return new Date(9999, 0, 1);
+          const dd = parseInt(str.slice(0, 2));
+          const mm = parseInt(str.slice(2, 4)) - 1;
+          const yy = 2000 + parseInt(str.slice(4, 6));
+          return new Date(yy, mm, dd);
+        };
+        return parseDate(a.target_due_date) - parseDate(b.target_due_date);
+      });
+  }, [writeback]);
 
   // Fix Mojni count — only cases where mojini_yes is explicitly empty/NO and LOI issued
   const mojniPending = useMemo(() =>
@@ -615,15 +839,15 @@ export default function App() {
       </div>
 
       {/* MAIN GRID — Row 1 */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
 
         {/* MY ACTIONS */}
         <div style={{ background: '#fff', borderRadius: 12, padding: 14, border: '1px solid #E8ECF0' }}>
           <div style={{ fontWeight: 700, fontSize: 13, color: '#1F4E79', marginBottom: 10, display: 'flex', justifyContent: 'space-between' }}>
-            <span>⚡ My Actions Today</span>
-            <span style={{ fontSize: 11, color: '#E24B4A', fontWeight: 600 }}>{visibleActions.length} pending</span>
+            <span>⚡ Smart Actions</span>
+            <span style={{ fontSize: 11, color: '#E24B4A', fontWeight: 600 }}>{visibleActions.length} cases</span>
           </div>
-          <div style={{ maxHeight: 380, overflowY: 'auto' }}>
+          <div style={{ maxHeight: 340, overflowY: 'auto' }}>
             {visibleActions.length === 0 ? (
               <div style={{ textAlign: 'center', color: '#4CAF7D', padding: 20, fontSize: 13 }}>✅ All clear</div>
             ) : (
@@ -632,19 +856,55 @@ export default function App() {
           </div>
         </div>
 
-        {/* RSA HEALTH */}
+        {/* MY TO-DO */}
         <div style={{ background: '#fff', borderRadius: 12, padding: 14, border: '1px solid #E8ECF0' }}>
-          <div style={{ fontWeight: 700, fontSize: 13, color: '#1F4E79', marginBottom: 10 }}>🗺️ RSA Health Grid</div>
-          {RSA_LIST.map(rsa => {
-            const rsaKey = rsa.toLowerCase();
-            const rows1 = allModule1.filter(r => (r.sales_area || '').toLowerCase().includes(rsaKey));
-            const rows2 = loi.filter(r => (r.retail_sales_area || '').toLowerCase().includes(rsaKey));
-            return <RSAHealthRow key={rsa} rsa={rsa + ' RSA'} rows1={rows1} rows2={rows2} />;
-          })}
-          <div style={{ marginTop: 6, fontSize: 10, color: '#bbb', display: 'flex', gap: 10 }}>
-            <span>🔴 Critical</span><span>🟡 Overdue</span><span>🟢 On track</span>
+          <div style={{ fontWeight: 700, fontSize: 13, color: '#1F4E79', marginBottom: 10, display: 'flex', justifyContent: 'space-between' }}>
+            <span>✅ My To-Do</span>
+            <span style={{ fontSize: 11, color: myTodos.filter(n => isDueDateOverdue(n.target_due_date)).length > 0 ? '#E24B4A' : '#888', fontWeight: 600 }}>
+              {myTodos.filter(n => isDueDateOverdue(n.target_due_date)).length > 0 ? `${myTodos.filter(n => isDueDateOverdue(n.target_due_date)).length} overdue` : `${myTodos.length} tasks`}
+            </span>
+          </div>
+          <div style={{ maxHeight: 340, overflowY: 'auto' }}>
+            {myTodos.length === 0 ? (
+              <div style={{ textAlign: 'center', color: '#999', padding: 20, fontSize: 12 }}>
+                No to-dos yet.<br/>
+                <span style={{ fontSize: 11 }}>Search a location → add note with due date</span>
+              </div>
+            ) : (
+              myTodos.map((n, i) => {
+                const overdue = isDueDateOverdue(n.target_due_date);
+                return (
+                  <div key={i} style={{
+                    borderLeft: `3px solid ${overdue ? '#E24B4A' : '#378ADD'}`,
+                    background: overdue ? '#FFF0F0' : '#F0F6FF',
+                    borderRadius: 8, padding: '8px 10px', marginBottom: 6,
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: '#1F4E79' }}>
+                          {(n.loi_ref_no || n.adv_sr_no || '').slice(0, 50)}
+                        </div>
+                        <div style={{ fontSize: 11, color: '#333', marginTop: 3 }}>{n.remarks}</div>
+                        {n.escalation_reason && (
+                          <div style={{ fontSize: 10, color: '#EF9F27', marginTop: 2 }}>⚡ {n.escalation_reason}</div>
+                        )}
+                      </div>
+                      <div style={{ textAlign: 'right', marginLeft: 8, whiteSpace: 'nowrap' }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: overdue ? '#E24B4A' : '#378ADD' }}>
+                          {overdue ? '🔴 Overdue' : '📅'}
+                        </div>
+                        <div style={{ fontSize: 10, color: overdue ? '#E24B4A' : '#378ADD' }}>
+                          {formatDueDate(n.target_due_date)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
+
       </div>
 
       {/* MAIN GRID — Row 2 */}
@@ -780,7 +1040,7 @@ export default function App() {
         {/* SEARCH */}
         <div style={{ background: '#fff', borderRadius: 12, padding: 14, border: '1px solid #E8ECF0' }}>
           <div style={{ fontWeight: 700, fontSize: 13, color: '#1F4E79', marginBottom: 10 }}>🔍 Quick Lookup</div>
-          <SearchPanel allRows={allRows} />
+          <SearchPanel allRows={allRows} writeback={writeback} />
         </div>
 
       </div>
