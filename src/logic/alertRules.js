@@ -24,8 +24,6 @@ export const SLA = {
   FVC_RED: 21,
 
   // Module 2 timers (days)
-  MOJNI_AMBER: 30,
-  MOJNI_RED: 45,
   NOC_AVAILABLE_IDLE_AMBER: 15,
   NOC_AVAILABLE_IDLE_RED: 22,
   DRAWING_AMBER: 21,
@@ -100,7 +98,6 @@ export function parseTargetMonth(str) {
 
 export function getModule1Alert(row, source) {
   const status = row._normalisedStatus || '';
-  const today = new Date();
 
   switch (status) {
     case 'Court Case':
@@ -114,7 +111,6 @@ export function getModule1Alert(row, source) {
     case 'Group 3': {
       const drawDate = row.draw_result_date || row.lot_draw_date || '';
       const days = daysSince(drawDate);
-      const g3Single = row.single_g3_locations === 'YES' || row.g3_nil_selection === '';
       let level = ALERT_LEVELS.GREEN;
       if (days >= SLA.GROUP3_RED) level = ALERT_LEVELS.RED;
       else if (days >= SLA.GROUP3_AMBER) level = ALERT_LEVELS.AMBER;
@@ -221,8 +217,15 @@ export function getModule2Alert(row) {
 
   const alerts = [];
 
-  // Mojni not received
-  if (!row.mojini_yes || row.mojini_yes === '' || row.mojini_yes === 'NO') {
+  // ── Mojni / Drawing detection ──────────────────────────────
+  // "Drawing Prepared" column contains:
+  //   "Yes"          → drawing done, Mojni received
+  //   "Mojni Pending" → Mojni not yet received, drawing blocked
+  //   blank          → unknown — do NOT flag as Mojni pending
+  const drawingRaw = (row.drawing_prepared || '').toString().trim().toLowerCase();
+  const mojniPending = drawingRaw === 'mojni pending' || drawingRaw === 'mojni_pending';
+
+  if (mojniPending) {
     alerts.push({
       level: ALERT_LEVELS.RED,
       pendingOwner: PENDING_OWNERS.ENGINEERING,
@@ -231,11 +234,11 @@ export function getModule2Alert(row) {
     });
   }
 
-  // NOC available but not progressed
-  const nocAvailable = row.pwdnh_noc_available || '';
+  // ── NOC available but commissioning not progressed ─────────
+  const nocAvailable = (row.pwdnh_noc_available || row.policerevenue_noc_available || '').toLowerCase();
   const commissionedDate = row.commissioned_ro_20262027_date || '';
-  if (nocAvailable.toLowerCase().includes('available') && commissionedDate === '') {
-    const days = daysSince(row.noc_applied_yes);
+  if (nocAvailable.includes('available') && commissionedDate === '') {
+    const days = daysSince(row.noc_applied_date || row.noc_applied_yes);
     if (days && days > SLA.NOC_AVAILABLE_IDLE_AMBER) {
       alerts.push({
         level: days > SLA.NOC_AVAILABLE_IDLE_RED ? ALERT_LEVELS.RED : ALERT_LEVELS.AMBER,
@@ -246,9 +249,10 @@ export function getModule2Alert(row) {
     }
   }
 
-  // Zero letters sent and overdue
+  // ── Zero letters sent ──────────────────────────────────────
   const letters = parseInt(row.letter_send_total || '0') || 0;
-  if (letters === 0) {
+  const commissionable2 = (row.commissionable_yes_no || '').toUpperCase();
+  if (letters === 0 && commissionable2 === 'COMMISSIONABLE') {
     alerts.push({
       level: ALERT_LEVELS.AMBER,
       pendingOwner: PENDING_OWNERS.VIJAYRAJ,
@@ -257,7 +261,7 @@ export function getModule2Alert(row) {
     });
   }
 
-  // Commissioning target month approaching
+  // ── Commissioning target month ─────────────────────────────
   const targetMonth = parseTargetMonth(row.target_month_of_commissioning || '');
   if (targetMonth) {
     const monthsAway = (targetMonth - new Date()) / (1000 * 60 * 60 * 24 * 30);
