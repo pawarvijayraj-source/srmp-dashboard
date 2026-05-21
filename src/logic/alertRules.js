@@ -249,30 +249,45 @@ export function getModule2Alert(row) {
     }
   }
 
-  // ── Zero letters sent ──────────────────────────────────────
+  // ── Zero letters sent — only flag if case is stale ────────
+  // Only flag if: commissionable + zero letters + target month exists or passed
   const letters = parseInt(row.letter_send_total || '0') || 0;
   const commissionable2 = (row.commissionable_yes_no || '').toUpperCase();
-  if (letters === 0 && commissionable2 === 'COMMISSIONABLE') {
-    alerts.push({
-      level: ALERT_LEVELS.AMBER,
-      pendingOwner: PENDING_OWNERS.VIJAYRAJ,
-      action: 'Zero escalation letters sent — neglected case',
-      priority: 3,
-    });
+  const targetMonthStr = (row.target_month_of_commissioning || '').trim();
+  const hasTarget = targetMonthStr && 
+    targetMonthStr !== 'Not applicable' && 
+    targetMonthStr !== 'NA' &&
+    targetMonthStr !== '';
+
+  if (letters === 0 && commissionable2 === 'COMMISSIONABLE' && hasTarget) {
+    // Only flag if target month is within 6 months or already passed
+    const tMonth = parseTargetMonth(targetMonthStr);
+    if (tMonth) {
+      const monthsAway = (tMonth - new Date()) / (1000 * 60 * 60 * 24 * 30);
+      if (monthsAway <= 6) {
+        alerts.push({
+          level: ALERT_LEVELS.AMBER,
+          pendingOwner: PENDING_OWNERS.VIJAYRAJ,
+          action: 'Zero escalation letters sent — neglected case',
+          priority: 4,
+        });
+      }
+    }
   }
 
   // ── Commissioning target month ─────────────────────────────
   const targetMonth = parseTargetMonth(row.target_month_of_commissioning || '');
   if (targetMonth) {
     const monthsAway = (targetMonth - new Date()) / (1000 * 60 * 60 * 24 * 30);
-    if (monthsAway < 0) {
+    if (monthsAway < 0 && monthsAway > -6) {
+      // Only flag if overdue within last 6 months — not ancient cases
       alerts.push({
         level: ALERT_LEVELS.RED,
         pendingOwner: PENDING_OWNERS.VIJAYRAJ,
         action: `Commissioning target month passed — overdue`,
         priority: 1,
       });
-    } else if (monthsAway <= SLA.COMMISSIONING_TARGET_AMBER_MONTHS) {
+    } else if (monthsAway >= 0 && monthsAway <= SLA.COMMISSIONING_TARGET_AMBER_MONTHS) {
       alerts.push({
         level: ALERT_LEVELS.AMBER,
         pendingOwner: PENDING_OWNERS.VIJAYRAJ,
