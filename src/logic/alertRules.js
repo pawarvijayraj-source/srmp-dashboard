@@ -77,8 +77,15 @@ export function daysUntil(dateStr) {
 }
 
 // Parse month strings like "JUN'26" or "Jun 2026"
+// Special rule: "2026-27" → MAR'27, "2027-28" → MAR'28
 export function parseTargetMonth(str) {
   if (!str || str === '') return null;
+  
+  // Handle financial year format
+  if (str.trim() === '2026-27') return new Date(2027, 2, 1); // MAR 2027
+  if (str.trim() === '2027-28') return new Date(2028, 2, 1); // MAR 2028
+  if (str.trim() === '2025-26') return new Date(2026, 2, 1); // MAR 2026
+  
   const months = { jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11 };
   const clean = str.toLowerCase().replace(/[^a-z0-9]/g, ' ').trim();
   const parts = clean.split(/\s+/);
@@ -273,10 +280,7 @@ export function getModule2Alert(row) {
   const isSpecificMonth = targetMonthStr2 && 
     targetMonthStr2 !== 'Not applicable' && 
     targetMonthStr2 !== 'NA' &&
-    targetMonthStr2 !== '2026-27' &&
-    targetMonthStr2 !== '2027-28' &&
-    targetMonthStr2 !== '' &&
-    !targetMonthStr2.match(/^\d{4}-\d{2}$/); // skip pure year ranges
+    targetMonthStr2 !== ''; // skip pure year ranges
 
   if (isCommissionable && isSpecificMonth) {
     const targetMonth = parseTargetMonth(targetMonthStr2);
