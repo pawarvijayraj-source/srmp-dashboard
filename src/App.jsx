@@ -323,20 +323,24 @@ function MeetingNoteForm({ row, existingNotes, onSaved }) {
         <div style={{ marginBottom: 8 }}>
           <div style={{ fontSize: 10, color: '#999', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Last {existingNotes.length} meeting{existingNotes.length > 1 ? 's' : ''}</div>
           {existingNotes.slice(0, 3).map((n, i) => {
-            const overdue = isDueDateOverdue(n.target_due_date);
+            const dueDate = n.targetduedate || n.target_due_date || '';
+            const overdue = isDueDateOverdue(dueDate);
+            const noteText = n.remarks || '';
+            const actionText = n.escalationreason || n.escalation_reason || '';
+            const updatedOn = n.updatedon || n.updated_on || '';
             return (
-              <div key={i} style={{ background: '#F8FAFC', borderRadius: 6, padding: '6px 8px', marginBottom: 4, borderLeft: `3px solid ${n.target_due_date ? (overdue ? '#E24B4A' : '#378ADD') : '#ddd'}` }}>
+              <div key={i} style={{ background: '#F8FAFC', borderRadius: 6, padding: '6px 8px', marginBottom: 4, borderLeft: `3px solid ${dueDate ? (overdue ? '#E24B4A' : '#378ADD') : '#ddd'}` }}>
                 <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>
-                  {new Date(n.updated_on || n.current_stage_start_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })}
-                  {n.target_due_date && (
+                  {updatedOn ? new Date(updatedOn).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }) : ''}
+                  {dueDate && (
                     <span style={{ marginLeft: 8, color: overdue ? '#E24B4A' : '#378ADD', fontWeight: 700 }}>
-                      {overdue ? '🔴 Overdue' : '📅'} {formatDueDate(n.target_due_date)}
+                      {overdue ? '🔴 Overdue' : '📅'} {formatDueDate(dueDate)}
                     </span>
                   )}
                 </div>
-                <div style={{ fontSize: 11, color: '#333' }}>{n.remarks}</div>
-                {n.escalation_reason && (
-                  <div style={{ fontSize: 10, color: '#EF9F27', marginTop: 2 }}>⚡ {n.escalation_reason}</div>
+                <div style={{ fontSize: 11, color: '#333' }}>{noteText}</div>
+                {actionText && (
+                  <div style={{ fontSize: 10, color: '#EF9F27', marginTop: 2 }}>⚡ {actionText}</div>
                 )}
               </div>
             );
@@ -421,12 +425,13 @@ function SearchPanel({ allRows, writeback }) {
     const locKey = getLocation(selected).trim().toLowerCase().slice(0, 50);
     return writeback
       .filter(n => {
-        if (n.module_id !== 'MEETING_NOTE') return false;
-        const nAdv = (n.adv_sr_no || '').trim().toUpperCase();
-        const nLoc = (n.loi_ref_no || '').trim().toLowerCase();
+        const nModuleId = n.moduleid || n.module_id || '';
+        if (nModuleId !== 'MEETING_NOTE') return false;
+        const nAdv = (n.advsrno || n.adv_sr_no || '').trim().toUpperCase();
+        const nLoc = (n.loirefno || n.loi_ref_no || '').trim().toLowerCase();
         return (advKey && nAdv === advKey) || (locKey && nLoc.includes(locKey.slice(0, 20)));
       })
-      .sort((a, b) => new Date(b.updated_on) - new Date(a.updated_on));
+      .sort((a, b) => new Date(b.updatedon || b.updated_on) - new Date(a.updatedon || a.updated_on));
   }, [selected, writeback, refreshKey]);
 
   return (
@@ -736,7 +741,9 @@ export default function App() {
   const myTodos = useMemo(() => {
     if (!writeback) return [];
     return writeback
-      .filter(n => n.module_id === 'MEETING_NOTE' && n.target_due_date && n.target_due_date.trim() !== '')
+      .filter(n => (n.moduleid === 'MEETING_NOTE' || n.module_id === 'MEETING_NOTE') && 
+                   (n.targetduedate || n.target_due_date) && 
+                   (n.targetduedate || n.target_due_date).trim() !== '')
       .sort((a, b) => {
         const parseDate = (str) => {
           if (!str || str.length < 6) return new Date(9999, 0, 1);
@@ -745,7 +752,9 @@ export default function App() {
           const yy = 2000 + parseInt(str.slice(4, 6));
           return new Date(yy, mm, dd);
         };
-        return parseDate(a.target_due_date) - parseDate(b.target_due_date);
+        const dateA = a.targetduedate || a.target_due_date || '';
+        const dateB = b.targetduedate || b.target_due_date || '';
+        return parseDate(dateA) - parseDate(dateB);
       });
   }, [writeback]);
 
@@ -872,7 +881,11 @@ export default function App() {
               </div>
             ) : (
               myTodos.map((n, i) => {
-                const overdue = isDueDateOverdue(n.target_due_date);
+                const dueDate = n.targetduedate || n.target_due_date || '';
+                const overdue = isDueDateOverdue(dueDate);
+                const noteText = n.remarks || '';
+                const actionText = n.escalationreason || n.escalation_reason || '';
+                const locationRef = n.loirefno || n.loi_ref_no || n.advsrno || n.adv_sr_no || '';
                 return (
                   <div key={i} style={{
                     borderLeft: `3px solid ${overdue ? '#E24B4A' : '#378ADD'}`,
@@ -882,11 +895,11 @@ export default function App() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontSize: 11, fontWeight: 600, color: '#1F4E79' }}>
-                          {(n.loi_ref_no || n.adv_sr_no || '').slice(0, 50)}
+                          {locationRef.slice(0, 50)}
                         </div>
-                        <div style={{ fontSize: 11, color: '#333', marginTop: 3 }}>{n.remarks}</div>
-                        {n.escalation_reason && (
-                          <div style={{ fontSize: 10, color: '#EF9F27', marginTop: 2 }}>⚡ {n.escalation_reason}</div>
+                        <div style={{ fontSize: 11, color: '#333', marginTop: 3 }}>{noteText}</div>
+                        {actionText && (
+                          <div style={{ fontSize: 10, color: '#EF9F27', marginTop: 2 }}>⚡ {actionText}</div>
                         )}
                       </div>
                       <div style={{ textAlign: 'right', marginLeft: 8, whiteSpace: 'nowrap' }}>
@@ -894,7 +907,7 @@ export default function App() {
                           {overdue ? '🔴 Overdue' : '📅'}
                         </div>
                         <div style={{ fontSize: 10, color: overdue ? '#E24B4A' : '#378ADD' }}>
-                          {formatDueDate(n.target_due_date)}
+                          {formatDueDate(dueDate)}
                         </div>
                       </div>
                     </div>
