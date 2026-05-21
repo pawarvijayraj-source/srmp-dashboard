@@ -758,11 +758,11 @@ export default function App() {
       });
   }, [writeback]);
 
-  // Fix Mojni count — only cases where mojini_yes is explicitly empty/NO and LOI issued
+  // Mojni count — based on Drawing Prepared column
   const mojniPending = useMemo(() =>
     loi.filter(r => {
-      const m = (r.mojini_yes || '').toString().trim().toLowerCase();
-      return m === '' || m === 'no';
+      const d = (r.drawing_prepared || '').toString().trim().toLowerCase();
+      return d === 'mojni pending' || d === 'mojni_pending';
     }).length,
     [loi]
   );
