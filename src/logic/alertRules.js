@@ -249,22 +249,13 @@ export function getModule2Alert(row) {
     }
   }
 
-  // ── Zero letters sent — only flag if case is stale ────────
-  // Only flag if: commissionable + zero letters + target month exists or passed
+  // ── Zero letters sent — only flag commissionable cases with specific target ──
   const letters = parseInt(row.letter_send_total || '0') || 0;
-  const commissionable2 = (row.commissionable_yes_no || '').toUpperCase();
-  const targetMonthStr = (row.target_month_of_commissioning || '').trim();
-  const hasTarget = targetMonthStr && 
-    targetMonthStr !== 'Not applicable' && 
-    targetMonthStr !== 'NA' &&
-    targetMonthStr !== '';
-
-  if (letters === 0 && commissionable2 === 'COMMISSIONABLE' && hasTarget) {
-    // Only flag if target month is within 6 months or already passed
-    const tMonth = parseTargetMonth(targetMonthStr);
+  if (letters === 0 && isCommissionable && isSpecificMonth) {
+    const tMonth = parseTargetMonth(targetMonthStr2);
     if (tMonth) {
       const monthsAway = (tMonth - new Date()) / (1000 * 60 * 60 * 24 * 30);
-      if (monthsAway <= 6) {
+      if (monthsAway <= 4) {
         alerts.push({
           level: ALERT_LEVELS.AMBER,
           pendingOwner: PENDING_OWNERS.VIJAYRAJ,
@@ -276,24 +267,36 @@ export function getModule2Alert(row) {
   }
 
   // ── Commissioning target month ─────────────────────────────
-  const targetMonth = parseTargetMonth(row.target_month_of_commissioning || '');
-  if (targetMonth) {
-    const monthsAway = (targetMonth - new Date()) / (1000 * 60 * 60 * 24 * 30);
-    if (monthsAway < 0 && monthsAway > -6) {
-      // Only flag if overdue within last 6 months — not ancient cases
-      alerts.push({
-        level: ALERT_LEVELS.RED,
-        pendingOwner: PENDING_OWNERS.VIJAYRAJ,
-        action: `Commissioning target month passed — overdue`,
-        priority: 1,
-      });
-    } else if (monthsAway >= 0 && monthsAway <= SLA.COMMISSIONING_TARGET_AMBER_MONTHS) {
-      alerts.push({
-        level: ALERT_LEVELS.AMBER,
-        pendingOwner: PENDING_OWNERS.VIJAYRAJ,
-        action: `Commissioning target in ${Math.round(monthsAway * 30)} days`,
-        priority: 3,
-      });
+  // Only flag COMMISSIONABLE cases with specific month targets (not just year)
+  const isCommissionable = (row.commissionable_yes_no || '').toUpperCase() === 'COMMISSIONABLE';
+  const targetMonthStr2 = (row.target_month_of_commissioning || '').trim();
+  const isSpecificMonth = targetMonthStr2 && 
+    targetMonthStr2 !== 'Not applicable' && 
+    targetMonthStr2 !== 'NA' &&
+    targetMonthStr2 !== '2026-27' &&
+    targetMonthStr2 !== '2027-28' &&
+    targetMonthStr2 !== '' &&
+    !targetMonthStr2.match(/^\d{4}-\d{2}$/); // skip pure year ranges
+
+  if (isCommissionable && isSpecificMonth) {
+    const targetMonth = parseTargetMonth(targetMonthStr2);
+    if (targetMonth) {
+      const monthsAway = (targetMonth - new Date()) / (1000 * 60 * 60 * 24 * 30);
+      if (monthsAway < 0 && monthsAway > -6) {
+        alerts.push({
+          level: ALERT_LEVELS.RED,
+          pendingOwner: PENDING_OWNERS.VIJAYRAJ,
+          action: `Commissioning target ${targetMonthStr2} passed — push now`,
+          priority: 1,
+        });
+      } else if (monthsAway >= 0 && monthsAway <= SLA.COMMISSIONING_TARGET_AMBER_MONTHS) {
+        alerts.push({
+          level: ALERT_LEVELS.AMBER,
+          pendingOwner: PENDING_OWNERS.VIJAYRAJ,
+          action: `Commissioning target ${targetMonthStr2} — ${Math.round(monthsAway * 30)} days away`,
+          priority: 3,
+        });
+      }
     }
   }
 
