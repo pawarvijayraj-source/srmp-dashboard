@@ -256,6 +256,14 @@ export function getModule2Alert(row) {
     }
   }
 
+  // ── Shared variables for commissioning logic ───────────────
+  const isCommissionable = (row.commissionable_yes_no || '').toUpperCase() === 'COMMISSIONABLE';
+  const targetMonthStr2 = (row.target_month_of_commissioning || '').trim();
+  const isSpecificMonth = targetMonthStr2 &&
+    targetMonthStr2 !== 'Not applicable' &&
+    targetMonthStr2 !== 'NA' &&
+    targetMonthStr2 !== '';
+
   // ── Zero letters sent — only flag commissionable cases with specific target ──
   const letters = parseInt(row.letter_send_total || '0') || 0;
   if (letters === 0 && isCommissionable && isSpecificMonth) {
@@ -275,13 +283,6 @@ export function getModule2Alert(row) {
 
   // ── Commissioning target month ─────────────────────────────
   // Only flag COMMISSIONABLE cases with specific month targets (not just year)
-  const isCommissionable = (row.commissionable_yes_no || '').toUpperCase() === 'COMMISSIONABLE';
-  const targetMonthStr2 = (row.target_month_of_commissioning || '').trim();
-  const isSpecificMonth = targetMonthStr2 && 
-    targetMonthStr2 !== 'Not applicable' && 
-    targetMonthStr2 !== 'NA' &&
-    targetMonthStr2 !== ''; // skip pure year ranges
-
   if (isCommissionable && isSpecificMonth) {
     const targetMonth = parseTargetMonth(targetMonthStr2);
     if (targetMonth) {
