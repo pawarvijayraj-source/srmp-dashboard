@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useGoogleSheets } from './hooks/useGoogleSheets';
-import { ALERT_LEVELS, isMyAction, parseTargetMonth } from './logic/alertRules';
+import { ALERT_LEVELS, isMyAction, isCourtCase, isNeglected, isCancellation, getCancellationAction, parseTargetMonth, parseFlexDate } from './logic/alertRules';
 import './App.css';
 
 const APPS_SCRIPT_URL = import.meta.env.VITE_APPS_SCRIPT_URL;
@@ -712,30 +712,45 @@ export default function App() {
   const allRows = useMemo(() => [...allModule1, ...loi], [allModule1, loi]);
 
   const myActions = useMemo(() => {
-    // Smart filter — only genuine interventions needed from Vijayraj
-    // Exclude: generic data gaps, cases where downstream evidence exists
     return allRows.filter(r => {
       const alert = r._alert;
       if (!alert) return false;
       if (alert.level === ALERT_LEVELS.GREY) return false;
-      if (alert.priority >= 20) return false; // progressed to M2
-
-      // For LOI cases — only flag if genuinely blocked, not just data gaps
-      if (r._source === 'LOI_PENDING') {
-        const hasDownstreamEvidence = 
-          r.drawing_prepared === 'YES' ||
-          (r.noc_applied_yes && r.noc_applied_yes !== '') ||
-          (r.peso_ca_status && r.peso_ca_status !== '') ||
-          (r.pwdnh_noc_available && r.pwdnh_noc_available !== '') ||
-          r.io_obtained_yes_no === 'YES';
-        
-        // Only show Mojni alert if NO downstream evidence
-        if (alert.action && alert.action.includes('Mojni') && hasDownstreamEvidence) return false;
-      }
-
+      if (alert.priority >= 20) return false;
+      if (isCourtCase(alert) || isNeglected(alert)) return false;
+      if (r._source === 'LOI_PENDING' && isCancellation(r)) return false;
+      const drawingRaw = (r.drawing_prepared || '').toString().trim().toLowerCase();
+      const hasDownstream = drawingRaw === 'yes' || drawingRaw.startsWith('yes') ||
+        (r.noc_applied_yes && r.noc_applied_yes !== '') ||
+        (r.peso_ca_status && r.peso_ca_status !== '') ||
+        r.io_obtained_yes_no === 'YES';
+      if (alert.action && alert.action.includes('Mojni not received') && hasDownstream) return false;
       return isMyAction(alert);
     }).sort((a, b) => (a._alert?.priority || 99) - (b._alert?.priority || 99));
   }, [allRows]);
+
+  // Court cases bucket
+  const courtCases = useMemo(() =>
+    allRows.filter(r => isCourtCase(r._alert)),
+    [allRows]
+  );
+
+  // Neglected cases bucket
+  const neglectedCases = useMemo(() =>
+    allRows.filter(r => isNeglected(r._alert)),
+    [allRows]
+  );
+
+  // Cancellation watchlist
+  const cancellationCases = useMemo(() =>
+    loi.filter(r => isCancellation(r))
+      .sort((a, b) => {
+        const letters_a = parseInt(a.letter_send_total || '0') || 0;
+        const letters_b = parseInt(b.letter_send_total || '0') || 0;
+        return letters_b - letters_a;
+      }),
+    [loi]
+  );
 
   // My To-Do — meeting notes with due dates
   const myTodos = useMemo(() => {
@@ -770,7 +785,6 @@ export default function App() {
   const redCount = allRows.filter(r => r._alert?.level === ALERT_LEVELS.RED).length;
   const amberCount = allRows.filter(r => r._alert?.level === ALERT_LEVELS.AMBER).length;
   const commissioningTarget = loi.filter(r => (r.financial_year_of_expected_commissioning || '').includes('2026-27')).length;
-  const courtCases = allModule1.filter(r => r._normalisedStatus === 'Court Case').length;
 
   const visibleActions = useMemo(() => {
     if (activeTab === 'm1') return myActions.filter(r => r._source !== 'LOI_PENDING');
@@ -829,7 +843,7 @@ export default function App() {
         <MetricCard label="Total active cases" value={allRows.length} sub={`M1: ${allModule1.length} · M2: ${loi.length}`} />
         <MetricCard label="My actions today" value={myActions.length} sub={`${redCount} red · ${amberCount} amber`} color="#E24B4A" />
         <MetricCard label="FY 2026-27 target" value={commissioningTarget} sub="Commissioning cases" />
-        <MetricCard label="Court cases" value={courtCases} sub="Frozen — legal" color="#E24B4A" />
+        <MetricCard label="Court cases" value={courtCases.length} sub="Frozen — legal" color="#E24B4A" />
         <MetricCard label="May-June target" value={loi.filter(r => { const t = (r.target_month_of_commissioning || '').toUpperCase(); return t.includes('MAY') || t.includes('JUN'); }).length} sub="Commissioning cases" color="#EF9F27" />
       </div>
 
@@ -921,7 +935,7 @@ export default function App() {
       </div>
 
       {/* MAIN GRID — Row 2 */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
 
         {/* M1 PIPELINE */}
         <div style={{ background: '#fff', borderRadius: 12, padding: 14, border: '1px solid #E8ECF0' }}>
@@ -1054,6 +1068,96 @@ export default function App() {
         <div style={{ background: '#fff', borderRadius: 12, padding: 14, border: '1px solid #E8ECF0' }}>
           <div style={{ fontWeight: 700, fontSize: 13, color: '#1F4E79', marginBottom: 10 }}>🔍 Quick Lookup</div>
           <SearchPanel allRows={allRows} writeback={writeback} />
+        </div>
+
+      </div>
+
+      {/* MAIN GRID — Row 3 */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginTop: 10 }}>
+
+        {/* COURT CASES */}
+        <div style={{ background: '#fff', borderRadius: 12, padding: 14, border: '1px solid #E8ECF0' }}>
+          <div style={{ fontWeight: 700, fontSize: 13, color: '#1F4E79', marginBottom: 10, display: 'flex', justifyContent: 'space-between' }}>
+            <span>⚖️ Court Cases</span>
+            <span style={{ fontSize: 11, background: '#FFF0F0', color: '#E24B4A', padding: '2px 8px', borderRadius: 12, fontWeight: 600 }}>{courtCases.length} frozen</span>
+          </div>
+          <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+            {courtCases.length === 0 ? (
+              <div style={{ textAlign: 'center', color: '#4CAF7D', padding: 16, fontSize: 12 }}>✅ No court cases</div>
+            ) : courtCases.map((row, i) => (
+              <div key={i} style={{ borderLeft: '3px solid #E24B4A', background: '#FFF0F0', borderRadius: 8, padding: '7px 10px', marginBottom: 5 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#1F4E79' }}>{getLocation(row).slice(0, 55)}</div>
+                <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>
+                  {row.district || row.district_name} · {row.sales_area || row.retail_sales_area} · {row._source}
+                </div>
+                <div style={{ fontSize: 10, color: '#E24B4A', marginTop: 2 }}>
+                  {row.remarks_court_case || row.complaint_court_case || row['remarks_court_case'] || 'Legal hold — check status'}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* NEGLECTED CASES */}
+        <div style={{ background: '#fff', borderRadius: 12, padding: 14, border: '1px solid #E8ECF0' }}>
+          <div style={{ fontWeight: 700, fontSize: 13, color: '#1F4E79', marginBottom: 10, display: 'flex', justifyContent: 'space-between' }}>
+            <span>😴 Neglected Cases</span>
+            <span style={{ fontSize: 11, background: '#FFFBF0', color: '#EF9F27', padding: '2px 8px', borderRadius: 12, fontWeight: 600 }}>{neglectedCases.length} cases</span>
+          </div>
+          <div style={{ fontSize: 10, color: '#999', marginBottom: 8 }}>LOI &gt; 1 year · No DM NOC · Review every 15 days</div>
+          <div style={{ maxHeight: 280, overflowY: 'auto' }}>
+            {neglectedCases.length === 0 ? (
+              <div style={{ textAlign: 'center', color: '#4CAF7D', padding: 16, fontSize: 12 }}>✅ No neglected cases</div>
+            ) : neglectedCases.map((row, i) => (
+              <div key={i} style={{ borderLeft: '3px solid #EF9F27', background: '#FFFBF0', borderRadius: 8, padding: '7px 10px', marginBottom: 5 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#1F4E79' }}>{getLocation(row).slice(0, 55)}</div>
+                <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>
+                  {row.district || row.district_name} · {row.retail_sales_area}
+                </div>
+                <div style={{ fontSize: 10, color: '#EF9F27', marginTop: 2 }}>{row._alert?.action}</div>
+                <div style={{ fontSize: 10, color: '#999', marginTop: 2 }}>
+                  Letters: {row.letter_send_total || '0'} · {row.target_month_of_commissioning || 'No target'}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* CANCELLATION WATCHLIST */}
+        <div style={{ background: '#fff', borderRadius: 12, padding: 14, border: '1px solid #E8ECF0' }}>
+          <div style={{ fontWeight: 700, fontSize: 13, color: '#1F4E79', marginBottom: 10, display: 'flex', justifyContent: 'space-between' }}>
+            <span>❌ Cancellation Watchlist</span>
+            <span style={{ fontSize: 11, background: '#F5F5F5', color: '#888', padding: '2px 8px', borderRadius: 12, fontWeight: 600 }}>{cancellationCases.length} cases</span>
+          </div>
+          <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+            {cancellationCases.length === 0 ? (
+              <div style={{ textAlign: 'center', color: '#999', padding: 16, fontSize: 12 }}>No non-commissionable cases</div>
+            ) : cancellationCases.map((row, i) => {
+              const letters = parseInt(row.letter_send_total || '0') || 0;
+              const momDate = row.mom_date || '';
+              const action = row._alert?.action || getCancellationAction(row);
+              const isCritical = action.includes('seek FO');
+              const isMom = action.includes('MOM now') || action.includes('MOM done');
+              return (
+                <div key={i} style={{
+                  borderLeft: `3px solid ${isCritical ? '#E24B4A' : isMom ? '#EF9F27' : '#999'}`,
+                  background: isCritical ? '#FFF0F0' : isMom ? '#FFFBF0' : '#F8F8F8',
+                  borderRadius: 8, padding: '7px 10px', marginBottom: 5,
+                }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#1F4E79' }}>{getLocation(row).slice(0, 55)}</div>
+                  <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>
+                    {row.district_name} · {row.retail_sales_area}
+                  </div>
+                  <div style={{ fontSize: 10, color: isCritical ? '#E24B4A' : isMom ? '#EF9F27' : '#666', marginTop: 2, fontWeight: 500 }}>
+                    ⚡ {action}
+                  </div>
+                  <div style={{ fontSize: 10, color: '#999', marginTop: 2 }}>
+                    Letters: {letters} {momDate ? `· MOM: ${momDate.split('/')[0]}` : ''}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
       </div>

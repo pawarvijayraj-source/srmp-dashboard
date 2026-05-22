@@ -4,7 +4,6 @@
 // ============================================================
 
 export const SLA = {
-  // Module 1 timers (days)
   ISD_AMBER: 8,
   ISD_RED: 11,
   ISD_EXTENSION_MAX: 20,
@@ -14,24 +13,17 @@ export const SLA = {
   RECTIFICATION_AMBER: 17,
   RECTIFICATION_RED: 22,
   RECTIFICATION_MAX: 21,
-  ADVOCATE_AMBER: 21,
-  ADVOCATE_RED: 30,
-  ASC_AMBER: 14,
-  ASC_RED: 21,
   LEC_AMBER: 21,
   LEC_RED: 30,
   FVC_AMBER: 14,
   FVC_RED: 21,
-
-  // Module 2 timers (days)
   NOC_AVAILABLE_IDLE_AMBER: 15,
   NOC_AVAILABLE_IDLE_RED: 22,
-  DRAWING_AMBER: 21,
-  DRAWING_RED: 30,
-  DORMANCY_AMBER: 30,
-  DORMANCY_RED: 45,
-  NO_LETTERS_RED: 30,
   COMMISSIONING_TARGET_AMBER_MONTHS: 2,
+  NEGLECTED_LOI_AGE_DAYS: 365,
+  NEGLECTED_REVIEW_DAYS: 15,
+  CANCELLATION_MOM_OVERDUE_DAYS: 30,
+  CANCELLATION_LETTER_INTERVAL_DAYS: 30,
 };
 
 export const ALERT_LEVELS = {
@@ -56,36 +48,52 @@ export const PENDING_OWNERS = {
   NH: 'NH Authority',
   DRSH: 'DRSH',
   SRH: 'SRH',
+  FO: 'Field Officer',
 };
 
-// Calculate days between a date string and today
 export function daysSince(dateStr) {
   if (!dateStr || dateStr === '') return null;
-  const d = new Date(dateStr);
-  if (isNaN(d)) return null;
-  const today = new Date();
-  return Math.floor((today - d) / (1000 * 60 * 60 * 24));
+  const d = parseFlexDate(dateStr);
+  if (!d) return null;
+  return Math.floor((new Date() - d) / (1000 * 60 * 60 * 24));
 }
 
-// Calculate days until a target date
 export function daysUntil(dateStr) {
   if (!dateStr || dateStr === '') return null;
-  const d = new Date(dateStr);
-  if (isNaN(d)) return null;
-  const today = new Date();
-  return Math.floor((d - today) / (1000 * 60 * 60 * 24));
+  const d = parseFlexDate(dateStr);
+  if (!d) return null;
+  return Math.floor((d - new Date()) / (1000 * 60 * 60 * 24));
 }
 
-// Parse month strings like "JUN'26" or "Jun 2026"
-// Special rule: "2026-27" → MAR'27, "2027-28" → MAR'28
+export function parseFlexDate(str) {
+  if (!str || str === '') return null;
+  const clean = String(str).split('/')[0].split(' ')[0].trim();
+  const dmy = clean.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$/);
+  if (dmy) {
+    const year = dmy[3].length === 2 ? 2000 + parseInt(dmy[3]) : parseInt(dmy[3]);
+    return new Date(year, parseInt(dmy[2]) - 1, parseInt(dmy[1]));
+  }
+  const mdy = clean.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (mdy) return new Date(parseInt(mdy[3]), parseInt(mdy[1]) - 1, parseInt(mdy[2]));
+  const d = new Date(clean);
+  if (!isNaN(d)) return d;
+  return null;
+}
+
+export function isDone(val) {
+  if (!val || val === '') return false;
+  const v = String(val).toLowerCase().trim();
+  if (v === 'yes' || v === 'y') return true;
+  if (/\d{2}\.\d{2}\.\d{2,4}/.test(v)) return true;
+  if (/^\d{1,2}[.\/]\d{1,2}[.\/]\d{2,4}/.test(v)) return true;
+  return false;
+}
+
 export function parseTargetMonth(str) {
   if (!str || str === '') return null;
-  
-  // Handle financial year format
-  if (str.trim() === '2026-27') return new Date(2027, 2, 1); // MAR 2027
-  if (str.trim() === '2027-28') return new Date(2028, 2, 1); // MAR 2028
-  if (str.trim() === '2025-26') return new Date(2026, 2, 1); // MAR 2026
-  
+  if (str.trim() === '2026-27') return new Date(2027, 2, 1);
+  if (str.trim() === '2027-28') return new Date(2028, 2, 1);
+  if (str.trim() === '2025-26') return new Date(2026, 2, 1);
   const months = { jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11 };
   const clean = str.toLowerCase().replace(/[^a-z0-9]/g, ' ').trim();
   const parts = clean.split(/\s+/);
@@ -99,233 +107,165 @@ export function parseTargetMonth(str) {
   return new Date(year, month, 1);
 }
 
-// ============================================================
-// MODULE 1 ALERT ENGINE
-// ============================================================
+export function inferModule1Stage(row, source) {
+  if (source === 'DSB_2023') {
+    const loiLetterSent = isDone(row['petrolpump_dealer_chayan_loi_letter_send_date_after_loi_mso_approved']);
+    const loiMsoApproved = isDone(row['petrolpump_dealer_chayan_loi_mso_approved_date']);
+    const loiNoteApproved = isDone(row['loi_note_approved_date']);
+    const loiNoteInitiated = isDone(row['loi_note_initiated']);
+    const fvcDone = isDone(row['fvc_done']) || isDone(row['group_3_fvc_done']);
+    const lecDone = isDone(row['lec_done']) || isDone(row['group_3_lec_done']);
+    if (loiLetterSent) return { stage: 'LOI_ISSUED', asc: true, lec: true, fvc: true, alert: null };
+    if (loiMsoApproved) return { stage: 'LOI_MSO_APPROVED', asc: true, lec: true, fvc: true, alert: { action: 'LOI letter to be issued to candidate', level: ALERT_LEVELS.RED, priority: 1 } };
+    if (loiNoteApproved) return { stage: 'LOI_NOTE_APPROVED', asc: true, lec: true, fvc: true, alert: { action: 'LOI MSO approval pending', level: ALERT_LEVELS.AMBER, priority: 2 } };
+    if (loiNoteInitiated) return { stage: 'LOI_NOTE_INITIATED', asc: true, lec: true, fvc: true, alert: { action: 'LOI note initiated — approval pending', level: ALERT_LEVELS.AMBER, priority: 2 } };
+    if (fvcDone) return { stage: 'FVC_DONE', asc: true, lec: true, fvc: true, alert: { action: 'FVC done — initiate LOI note', level: ALERT_LEVELS.AMBER, priority: 3 } };
+    if (lecDone) return { stage: 'LEC_DONE', asc: true, lec: true, fvc: false, alert: null };
+    return { stage: null, asc: false, lec: false, fvc: false, alert: null };
+  }
+  if (source === 'DSB_2018') {
+    const loiLetterSent = isDone(row['petrolpump_dealer_chayan_loi_letter_send_date_after_loi_mso_approved']);
+    const loiMsoApproved = isDone(row['petrolpump_dealer_chayan_loi_mso_approved_date']);
+    const rdbApproval = isDone(row['rdb_loi_approval_date']);
+    const rdbNote = isDone(row['rdb_or_unnayan_note']);
+    const fvcDone = isDone(row['fvc_done_yesno']) || isDone(row['date_of_conducting_fvc']);
+    const lecDone = isDone(row['lec_done_yesno']) || isDone(row['date_of_conducting_lec']);
+    if (loiLetterSent) return { stage: 'LOI_ISSUED', asc: true, lec: true, fvc: true, alert: null };
+    if (loiMsoApproved) return { stage: 'LOI_MSO_APPROVED', asc: true, lec: true, fvc: true, alert: { action: 'LOI letter to be issued to candidate', level: ALERT_LEVELS.RED, priority: 1 } };
+    if (rdbApproval) return { stage: 'RDB_APPROVED', asc: true, lec: true, fvc: true, alert: { action: 'RDB approved — MSO approval pending', level: ALERT_LEVELS.AMBER, priority: 2 } };
+    if (rdbNote) return { stage: 'RDB_NOTE', asc: true, lec: true, fvc: true, alert: { action: 'RDB/Unnayan note done — approval pending', level: ALERT_LEVELS.AMBER, priority: 2 } };
+    if (fvcDone) return { stage: 'FVC_DONE', asc: true, lec: true, fvc: true, alert: { action: 'FVC done — initiate RDB note', level: ALERT_LEVELS.AMBER, priority: 3 } };
+    if (lecDone) return { stage: 'LEC_DONE', asc: true, lec: true, fvc: false, alert: null };
+    return { stage: null, asc: false, lec: false, fvc: false, alert: null };
+  }
+  return { stage: null, asc: false, lec: false, fvc: false, alert: null };
+}
 
 export function getModule1Alert(row, source) {
   const status = row._normalisedStatus || '';
+  const inferred = inferModule1Stage(row, source);
+  if (inferred.alert) return { ...inferred.alert, pendingOwner: PENDING_OWNERS.VIJAYRAJ, bucket: 'actions' };
 
   switch (status) {
     case 'Court Case':
-      return {
-        level: ALERT_LEVELS.RED,
-        pendingOwner: PENDING_OWNERS.LEGAL,
-        action: 'Court case frozen — check legal status',
-        priority: 1,
-      };
-
+      return { level: ALERT_LEVELS.RED, pendingOwner: PENDING_OWNERS.LEGAL, action: 'Court case frozen — check legal status', priority: 1, bucket: 'court' };
     case 'Group 3': {
-      const drawDate = row.draw_result_date || row.lot_draw_date || '';
-      const days = daysSince(drawDate);
-      let level = ALERT_LEVELS.GREEN;
-      if (days >= SLA.GROUP3_RED) level = ALERT_LEVELS.RED;
-      else if (days >= SLA.GROUP3_AMBER) level = ALERT_LEVELS.AMBER;
-      return {
-        level,
-        pendingOwner: PENDING_OWNERS.CANDIDATE,
-        action: days ? `Group 3 — ${days} of 90 days elapsed` : 'Group 3 — check land identification',
-        daysElapsed: days,
-        maxDays: SLA.GROUP3_MAX,
-        priority: level === ALERT_LEVELS.RED ? 2 : 4,
-      };
+      const days = daysSince(row.draw_result_date || row.lot_draw_date || '');
+      let level = days >= SLA.GROUP3_RED ? ALERT_LEVELS.RED : days >= SLA.GROUP3_AMBER ? ALERT_LEVELS.AMBER : ALERT_LEVELS.GREEN;
+      return { level, pendingOwner: PENDING_OWNERS.CANDIDATE, action: days ? `Group 3 — ${days} of 90 days elapsed` : 'Group 3 — check land identification', daysElapsed: days, maxDays: SLA.GROUP3_MAX, priority: level === ALERT_LEVELS.RED ? 2 : 4, bucket: 'actions' };
     }
-
     case 'ISD & DOC Pending': {
-      const resultDate = row.draw_result_date || '';
-      const days = daysSince(resultDate);
-      let level = ALERT_LEVELS.GREEN;
-      if (days >= SLA.ISD_RED) level = ALERT_LEVELS.RED;
-      else if (days >= SLA.ISD_AMBER) level = ALERT_LEVELS.AMBER;
-      return {
-        level,
-        pendingOwner: PENDING_OWNERS.CANDIDATE,
-        action: days ? `ISD pending — ${days} days elapsed` : 'ISD documents awaited',
-        daysElapsed: days,
-        maxDays: SLA.ISD_EXTENSION_MAX,
-        priority: level === ALERT_LEVELS.RED ? 2 : 4,
-      };
+      const days = daysSince(row.draw_result_date || '');
+      let level = days >= SLA.ISD_RED ? ALERT_LEVELS.RED : days >= SLA.ISD_AMBER ? ALERT_LEVELS.AMBER : ALERT_LEVELS.GREEN;
+      return { level, pendingOwner: PENDING_OWNERS.CANDIDATE, action: days ? `ISD pending — ${days} days elapsed` : 'ISD documents awaited', daysElapsed: days, maxDays: SLA.ISD_EXTENSION_MAX, priority: level === ALERT_LEVELS.RED ? 2 : 4, bucket: 'actions' };
     }
-
     case 'ASC Pending':
-      return {
-        level: ALERT_LEVELS.AMBER,
-        pendingOwner: PENDING_OWNERS.ASC,
-        action: 'ASC scrutiny in progress — check for rectification',
-        priority: 5,
-      };
-
+      return { level: ALERT_LEVELS.AMBER, pendingOwner: PENDING_OWNERS.ASC, action: 'ASC scrutiny in progress', priority: 5, bucket: 'actions' };
     case 'LEC Pending':
-      return {
-        level: ALERT_LEVELS.AMBER,
-        pendingOwner: PENDING_OWNERS.LEC,
-        action: 'LEC site visit pending — follow up with committee',
-        priority: 5,
-      };
-
+      return { level: ALERT_LEVELS.AMBER, pendingOwner: PENDING_OWNERS.LEC, action: 'LEC site visit pending — follow up with committee', priority: 5, bucket: 'actions' };
     case 'FVC Pending':
-      return {
-        level: ALERT_LEVELS.AMBER,
-        pendingOwner: PENDING_OWNERS.FVC,
-        action: 'FVC field verification pending',
-        priority: 5,
-      };
-
+      return { level: ALERT_LEVELS.AMBER, pendingOwner: PENDING_OWNERS.FVC, action: 'FVC field verification pending', priority: 5, bucket: 'actions' };
     case 'Draw of Lots':
-      return {
-        level: ALERT_LEVELS.BLUE,
-        pendingOwner: PENDING_OWNERS.STATE_OFFICE,
-        action: 'Draw of Lots to be conducted — coordinate with SO',
-        priority: 6,
-      };
-
+      return { level: ALERT_LEVELS.BLUE, pendingOwner: PENDING_OWNERS.STATE_OFFICE, action: 'Draw of Lots to be conducted', priority: 6, bucket: 'actions' };
     case 'LOI Issued':
-      return {
-        level: ALERT_LEVELS.GREEN,
-        pendingOwner: null,
-        action: 'LOI issued — now in Module 2',
-        priority: 10,
-      };
-
+      return { level: ALERT_LEVELS.GREEN, pendingOwner: null, action: 'LOI issued — now in Module 2', priority: 10, bucket: 'none' };
     case 'NIL Selection':
     case 'Dropped':
     case 'Cancelled':
-      return {
-        level: ALERT_LEVELS.GREY,
-        pendingOwner: null,
-        action: status,
-        priority: 99,
-      };
-
+      return { level: ALERT_LEVELS.GREY, pendingOwner: null, action: status, priority: 99, bucket: 'none' };
     default:
-      return {
-        level: ALERT_LEVELS.GREY,
-        pendingOwner: null,
-        action: status || 'Unknown status',
-        priority: 99,
-      };
+      return { level: ALERT_LEVELS.GREY, pendingOwner: null, action: status || 'Unknown', priority: 99, bucket: 'none' };
   }
 }
-
-// ============================================================
-// MODULE 2 ALERT ENGINE
-// ============================================================
 
 export function getModule2Alert(row) {
   const commissionable = (row.commissionable_yes_no || '').toUpperCase();
   if (commissionable === 'NON COMMISSIONABLE') {
-    return {
-      level: ALERT_LEVELS.GREY,
-      pendingOwner: null,
-      action: 'Non-commissionable — to be cancelled',
-      priority: 99,
-    };
+    return { level: ALERT_LEVELS.GREY, pendingOwner: null, action: getCancellationAction(row), priority: 99, bucket: 'cancellation' };
   }
 
   const alerts = [];
+  const isCommissionable = commissionable === 'COMMISSIONABLE';
+  const targetMonthStr = (row.target_month_of_commissioning || '').trim();
+  const isSpecificTarget = targetMonthStr && targetMonthStr !== 'Not applicable' && targetMonthStr !== 'NA' && targetMonthStr !== '';
 
-  // ── Mojni / Drawing detection ──────────────────────────────
-  // "Drawing Prepared" column contains:
-  //   "Yes"          → drawing done, Mojni received
-  //   "Mojni Pending" → Mojni not yet received, drawing blocked
-  //   blank          → unknown — do NOT flag as Mojni pending
   const drawingRaw = (row.drawing_prepared || '').toString().trim().toLowerCase();
-  const mojniPending = drawingRaw === 'mojni pending' || drawingRaw === 'mojni_pending';
-
-  if (mojniPending) {
-    alerts.push({
-      level: ALERT_LEVELS.RED,
-      pendingOwner: PENDING_OWNERS.ENGINEERING,
-      action: 'Mojni not received — drawing blocked',
-      priority: 2,
-    });
+  if (drawingRaw.includes('mojni not received') || drawingRaw === 'mojni pending') {
+    alerts.push({ level: ALERT_LEVELS.RED, pendingOwner: PENDING_OWNERS.ENGINEERING, action: 'Mojni not received — drawing blocked', priority: 2, bucket: 'actions' });
+  } else if (drawingRaw.includes('mojni received') && drawingRaw.includes('pending')) {
+    alerts.push({ level: ALERT_LEVELS.AMBER, pendingOwner: PENDING_OWNERS.ENGINEERING, action: 'Mojni received — drawing pending', priority: 3, bucket: 'actions' });
   }
 
-  // ── NOC available but commissioning not progressed ─────────
   const nocAvailable = (row.pwdnh_noc_available || row.policerevenue_noc_available || '').toLowerCase();
   const commissionedDate = row.commissioned_ro_20262027_date || '';
   if (nocAvailable.includes('available') && commissionedDate === '') {
     const days = daysSince(row.noc_applied_date || row.noc_applied_yes);
     if (days && days > SLA.NOC_AVAILABLE_IDLE_AMBER) {
-      alerts.push({
-        level: days > SLA.NOC_AVAILABLE_IDLE_RED ? ALERT_LEVELS.RED : ALERT_LEVELS.AMBER,
-        pendingOwner: PENDING_OWNERS.VIJAYRAJ,
-        action: `NOC available but commissioning not progressed — ${days} days idle`,
-        priority: 2,
-      });
+      alerts.push({ level: days > SLA.NOC_AVAILABLE_IDLE_RED ? ALERT_LEVELS.RED : ALERT_LEVELS.AMBER, pendingOwner: PENDING_OWNERS.VIJAYRAJ, action: `NOC available — not progressed (${days} days)`, priority: 2, bucket: 'actions' });
     }
   }
 
-  // ── Shared variables for commissioning logic ───────────────
-  const isCommissionable = (row.commissionable_yes_no || '').toUpperCase() === 'COMMISSIONABLE';
-  const targetMonthStr2 = (row.target_month_of_commissioning || '').trim();
-  const isSpecificMonth = targetMonthStr2 &&
-    targetMonthStr2 !== 'Not applicable' &&
-    targetMonthStr2 !== 'NA' &&
-    targetMonthStr2 !== '';
-
-  // ── Zero letters sent — only flag commissionable cases with specific target ──
-  const letters = parseInt(row.letter_send_total || '0') || 0;
-  if (letters === 0 && isCommissionable && isSpecificMonth) {
-    const tMonth = parseTargetMonth(targetMonthStr2);
-    if (tMonth) {
-      const monthsAway = (tMonth - new Date()) / (1000 * 60 * 60 * 24 * 30);
-      if (monthsAway <= 4) {
-        alerts.push({
-          level: ALERT_LEVELS.AMBER,
-          pendingOwner: PENDING_OWNERS.VIJAYRAJ,
-          action: 'Zero escalation letters sent — neglected case',
-          priority: 4,
-        });
-      }
-    }
+  const loiDate = parseFlexDate(row.loi_issued_date || row.loi_issued_as_on_date_01042026);
+  const loiAgeDays = loiDate ? Math.floor((new Date() - loiDate) / (1000 * 60 * 60 * 24)) : null;
+  const dmNocRaw = (row.na_availbale || '').toLowerCase();
+  const dmNocMissing = !dmNocRaw || dmNocRaw === '' || dmNocRaw === 'no' || dmNocRaw === 'n';
+  if (isCommissionable && loiAgeDays && loiAgeDays > SLA.NEGLECTED_LOI_AGE_DAYS && dmNocMissing) {
+    alerts.push({ level: ALERT_LEVELS.AMBER, pendingOwner: PENDING_OWNERS.VIJAYRAJ, action: `Neglected — LOI ${Math.round(loiAgeDays/365*10)/10} yrs old, no progress`, priority: 5, bucket: 'neglected', loiAgeDays });
   }
 
-  // ── Commissioning target month ─────────────────────────────
-  // Only flag COMMISSIONABLE cases with specific month targets (not just year)
-  if (isCommissionable && isSpecificMonth) {
-    const targetMonth = parseTargetMonth(targetMonthStr2);
+  if (isCommissionable && isSpecificTarget) {
+    const targetMonth = parseTargetMonth(targetMonthStr);
     if (targetMonth) {
       const monthsAway = (targetMonth - new Date()) / (1000 * 60 * 60 * 24 * 30);
       if (monthsAway < 0 && monthsAway > -6) {
-        alerts.push({
-          level: ALERT_LEVELS.RED,
-          pendingOwner: PENDING_OWNERS.VIJAYRAJ,
-          action: `Commissioning target ${targetMonthStr2} passed — push now`,
-          priority: 1,
-        });
+        alerts.push({ level: ALERT_LEVELS.RED, pendingOwner: PENDING_OWNERS.VIJAYRAJ, action: `Target ${targetMonthStr} passed — push now`, priority: 1, bucket: 'actions' });
       } else if (monthsAway >= 0 && monthsAway <= SLA.COMMISSIONING_TARGET_AMBER_MONTHS) {
-        alerts.push({
-          level: ALERT_LEVELS.AMBER,
-          pendingOwner: PENDING_OWNERS.VIJAYRAJ,
-          action: `Commissioning target ${targetMonthStr2} — ${Math.round(monthsAway * 30)} days away`,
-          priority: 3,
-        });
+        alerts.push({ level: ALERT_LEVELS.AMBER, pendingOwner: PENDING_OWNERS.VIJAYRAJ, action: `Target ${targetMonthStr} — ${Math.round(monthsAway * 30)} days away`, priority: 3, bucket: 'actions' });
       }
     }
   }
 
-  if (alerts.length === 0) {
-    return {
-      level: ALERT_LEVELS.GREEN,
-      pendingOwner: null,
-      action: 'On track',
-      priority: 10,
-    };
+  const letters = parseInt(row.letter_send_total || '0') || 0;
+  if (letters === 0 && isCommissionable && isSpecificTarget) {
+    const tMonth = parseTargetMonth(targetMonthStr);
+    if (tMonth) {
+      const monthsAway = (tMonth - new Date()) / (1000 * 60 * 60 * 24 * 30);
+      if (monthsAway <= 4) {
+        alerts.push({ level: ALERT_LEVELS.AMBER, pendingOwner: PENDING_OWNERS.VIJAYRAJ, action: 'Zero letters sent — neglected case', priority: 4, bucket: 'neglected' });
+      }
+    }
   }
 
-  // Return highest priority alert
+  if (alerts.length === 0) return { level: ALERT_LEVELS.GREEN, pendingOwner: null, action: 'On track', priority: 10, bucket: 'none' };
   return alerts.sort((a, b) => a.priority - b.priority)[0];
 }
 
-// ============================================================
-// MY ACTIONS TODAY — which cases need Vijayraj's attention
-// ============================================================
+export function getCancellationAction(row) {
+  const letters = parseInt(row.letter_send_total || '0') || 0;
+  const momDateRaw = row.mom_date || '';
+  const momDate = parseFlexDate(momDateRaw);
+  const momAgeDays = momDate ? Math.floor((new Date() - momDate) / (1000 * 60 * 60 * 24)) : null;
+  if (momDate && momAgeDays > SLA.CANCELLATION_MOM_OVERDUE_DAYS) return `MOM ${momAgeDays} days ago — seek FO cancellation recommendation`;
+  if (momDate) return `MOM done — await ${SLA.CANCELLATION_MOM_OVERDUE_DAYS - momAgeDays} more days`;
+  if (letters >= 3) return `${letters} letters sent — conduct MOM now`;
+  if (letters > 0) return `${letters}/3 letters sent — send next letter`;
+  return 'No letters sent — send first cancellation letter';
+}
 
 export function isMyAction(alert) {
-  return (
-    alert.pendingOwner === PENDING_OWNERS.VIJAYRAJ ||
-    alert.level === ALERT_LEVELS.RED ||
-    (alert.level === ALERT_LEVELS.AMBER && alert.priority <= 3)
-  );
+  if (!alert) return false;
+  if (alert.bucket === 'none' || alert.bucket === 'cancellation' || alert.bucket === 'neglected') return false;
+  return alert.pendingOwner === PENDING_OWNERS.VIJAYRAJ || alert.level === ALERT_LEVELS.RED || (alert.level === ALERT_LEVELS.AMBER && alert.priority <= 3);
+}
+
+export function isCourtCase(alert) {
+  return alert?.bucket === 'court';
+}
+
+export function isNeglected(alert) {
+  return alert?.bucket === 'neglected';
+}
+
+export function isCancellation(row) {
+  return (row.commissionable_yes_no || '').toUpperCase() === 'NON COMMISSIONABLE';
 }
