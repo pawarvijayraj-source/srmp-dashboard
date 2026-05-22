@@ -26,28 +26,39 @@ export function useGoogleSheets() {
     try {
       setData(prev => ({ ...prev, loading: true, error: null }));
 
-      const [res23, res18, resLoi, resWb, resLec23, resLec18] = await Promise.all([
+      const [res23, res18, resLoi, resWb, resLec23, resLec18, resFvc23, resFvc18] = await Promise.all([
         axios.get(`${APPS_SCRIPT_URL}?action=dsb2023`),
         axios.get(`${APPS_SCRIPT_URL}?action=dsb2018`),
         axios.get(`${APPS_SCRIPT_URL}?action=loi`),
         axios.get(`${APPS_SCRIPT_URL}?action=writeback`),
         axios.get(`${APPS_SCRIPT_URL}?action=lec2023`),
         axios.get(`${APPS_SCRIPT_URL}?action=lec2018`),
+        axios.get(`${APPS_SCRIPT_URL}?action=fvc2023`),
+        axios.get(`${APPS_SCRIPT_URL}?action=fvc2018`),
       ]);
 
-      // ── Step 0: Build LEC lookup map ──────────────────────
+      // ── Step 0: Build LEC and FVC lookup maps ─────────────
       const lecRows = [
         ...(resLec23.data?.rows || []).map(r => ({ ...r, _lecSource: 'LEC_2023' })),
         ...(resLec18.data?.rows || []).map(r => ({ ...r, _lecSource: 'LEC_2018' })),
       ];
 
+      const fvcRows = [
+        ...(resFvc23.data?.rows || []).map(r => ({ ...r, _fvcSource: 'FVC_2023' })),
+        ...(resFvc18.data?.rows || []).map(r => ({ ...r, _fvcSource: 'FVC_2018' })),
+      ];
+
+      // Build lookup by Adv Sr No
       const lecByAdvSrNo = new Map();
       lecRows.forEach(r => {
-        // Try all possible adv sr no column names
-        const advKey = normaliseAdvSrNo(
-          r.adv_sr_no || r.advertisement_sr_no || r.advt_sr_no || r.adv_no || ''
-        );
+        const advKey = normaliseAdvSrNo(r.adv_sr_no || r.advertisement_sr_no || r.advt_sr_no || '');
         if (advKey) lecByAdvSrNo.set(advKey, r);
+      });
+
+      const fvcByAdvSrNo = new Map();
+      fvcRows.forEach(r => {
+        const advKey = normaliseAdvSrNo(r.adv_sr_no || r.advertisement_sr_no || r.advt_sr_no || '');
+        if (advKey) fvcByAdvSrNo.set(advKey, r);
       });
 
       // ── Step 1: Process LOI Pending rows ──────────────────
@@ -125,6 +136,8 @@ export function useGoogleSheets() {
         loiByLocation,
         lecByAdvSrNo,
         lecRows,
+        fvcByAdvSrNo,
+        fvcRows,
         writeback,
         loading: false,
         error: null,

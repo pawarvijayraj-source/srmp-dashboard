@@ -704,7 +704,7 @@ const RSA_LIST = [
 
 // ── MAIN APP ─────────────────────────────────────────────────
 export default function App() {
-  const { dsb2023, dsb2018, loi, lecByAdvSrNo, writeback, loading, error, lastFetched, refresh } = useGoogleSheets();
+  const { dsb2023, dsb2018, loi, lecByAdvSrNo, fvcByAdvSrNo, writeback, loading, error, lastFetched, refresh } = useGoogleSheets();
   const [activeTab, setActiveTab] = useState('all');
   const [selectedStage, setSelectedStage] = useState(null);
 
@@ -752,24 +752,43 @@ export default function App() {
     [loi]
   );
 
-  // My To-Do — meeting notes with due dates
+  // My To-Do — only today and next 2 days, exclude completed/parked
   const myTodos = useMemo(() => {
     if (!writeback) return [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const twoDaysLater = new Date(today);
+    twoDaysLater.setDate(twoDaysLater.getDate() + 2);
+    twoDaysLater.setHours(23, 59, 59, 999);
+
+    const parseDate = (str) => {
+      if (!str || str.length < 6) return null;
+      const dd = parseInt(str.slice(0, 2));
+      const mm = parseInt(str.slice(2, 4)) - 1;
+      const yy = 2000 + parseInt(str.slice(4, 6));
+      const hh = str.length >= 10 ? parseInt(str.slice(7, 9)) : 0;
+      const min = str.length >= 10 ? parseInt(str.slice(9, 11)) : 0;
+      return new Date(yy, mm, dd, hh, min);
+    };
+
     return writeback
-      .filter(n => (n.moduleid === 'MEETING_NOTE' || n.module_id === 'MEETING_NOTE') && 
-                   (n.targetduedate || n.target_due_date) && 
-                   (n.targetduedate || n.target_due_date).trim() !== '')
+      .filter(n => {
+        const moduleId = n.moduleid || n.module_id || '';
+        if (moduleId !== 'MEETING_NOTE') return false;
+        const dueDate = n.targetduedate || n.target_due_date || '';
+        if (!dueDate || dueDate.trim() === '') return false;
+        // Exclude completed or parked
+        const status = (n.risklevel || n.risk_level || '').toUpperCase();
+        if (status === 'COMPLETED' || status === 'PARKED') return false;
+        // Only show overdue + today + next 2 days
+        const d = parseDate(dueDate);
+        if (!d) return false;
+        return d <= twoDaysLater; // includes overdue
+      })
       .sort((a, b) => {
-        const parseDate = (str) => {
-          if (!str || str.length < 6) return new Date(9999, 0, 1);
-          const dd = parseInt(str.slice(0, 2));
-          const mm = parseInt(str.slice(2, 4)) - 1;
-          const yy = 2000 + parseInt(str.slice(4, 6));
-          return new Date(yy, mm, dd);
-        };
-        const dateA = a.targetduedate || a.target_due_date || '';
-        const dateB = b.targetduedate || b.target_due_date || '';
-        return parseDate(dateA) - parseDate(dateB);
+        const da = parseDate(a.targetduedate || a.target_due_date || '') || new Date(9999,0,1);
+        const db = parseDate(b.targetduedate || b.target_due_date || '') || new Date(9999,0,1);
+        return da - db;
       });
   }, [writeback]);
 
@@ -881,17 +900,18 @@ export default function App() {
 
         {/* MY TO-DO */}
         <div style={{ background: '#fff', borderRadius: 12, padding: 14, border: '1px solid #E8ECF0' }}>
-          <div style={{ fontWeight: 700, fontSize: 13, color: '#1F4E79', marginBottom: 10, display: 'flex', justifyContent: 'space-between' }}>
+          <div style={{ fontWeight: 700, fontSize: 13, color: '#1F4E79', marginBottom: 6, display: 'flex', justifyContent: 'space-between' }}>
             <span>✅ My To-Do</span>
-            <span style={{ fontSize: 11, color: myTodos.filter(n => isDueDateOverdue(n.target_due_date)).length > 0 ? '#E24B4A' : '#888', fontWeight: 600 }}>
-              {myTodos.filter(n => isDueDateOverdue(n.target_due_date)).length > 0 ? `${myTodos.filter(n => isDueDateOverdue(n.target_due_date)).length} overdue` : `${myTodos.length} tasks`}
+            <span style={{ fontSize: 11, color: myTodos.filter(n => isDueDateOverdue(n.targetduedate || n.target_due_date || '')).length > 0 ? '#E24B4A' : '#888', fontWeight: 600 }}>
+              {myTodos.length} tasks · today+2d
             </span>
           </div>
-          <div style={{ maxHeight: 340, overflowY: 'auto' }}>
+          <div style={{ fontSize: 10, color: '#bbb', marginBottom: 8 }}>Showing overdue + today + next 2 days only</div>
+          <div style={{ maxHeight: 300, overflowY: 'auto' }}>
             {myTodos.length === 0 ? (
               <div style={{ textAlign: 'center', color: '#999', padding: 20, fontSize: 12 }}>
-                No to-dos yet.<br/>
-                <span style={{ fontSize: 11 }}>Search a location → add note with due date</span>
+                No tasks due today or next 2 days<br/>
+                <span style={{ fontSize: 11 }}>Search location → add note with due date</span>
               </div>
             ) : (
               myTodos.map((n, i) => {
@@ -900,6 +920,43 @@ export default function App() {
                 const noteText = n.remarks || '';
                 const actionText = n.escalationreason || n.escalation_reason || '';
                 const locationRef = n.loirefno || n.loi_ref_no || n.advsrno || n.adv_sr_no || '';
+                const rowIndex = n._row_index;
+
+                const handleAction = async (newStatus) => {
+                  try {
+                    await fetch(APPS_SCRIPT_URL, {
+                      method: 'POST',
+                      mode: 'no-cors',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        action: 'upsert_writeback',
+                        data: {
+                          adv_sr_no: n.advsrno || n.adv_sr_no || '',
+                          loi_ref_no: locationRef,
+                          module_id: 'MEETING_NOTE',
+                          macro_stage: 'VISITOR_NOTE',
+                          current_micro_stage: n.currentmicrostage || n.current_micro_stage || '',
+                          previous_micro_stage: '',
+                          pending_owner: 'Vijayraj',
+                          responsibility_type: 'PERSONAL',
+                          current_stage_start_date: n.currentstagestartdate || '',
+                          target_due_date: dueDate,
+                          last_meaningful_progress_date: new Date().toLocaleDateString('en-GB'),
+                          next_review_date: newStatus === 'PARKED' ? '' : dueDate,
+                          risk_level: newStatus,
+                          escalation_reason: actionText,
+                          exception_flag: '',
+                          exception_type: 'MEETING_NOTE',
+                          remarks: noteText,
+                          updated_by: 'Vijayraj',
+                          updated_on: new Date().toISOString(),
+                        }
+                      }),
+                    });
+                    setTimeout(() => window.location.reload(), 500);
+                  } catch(e) { console.error(e); }
+                };
+
                 return (
                   <div key={i} style={{
                     borderLeft: `3px solid ${overdue ? '#E24B4A' : '#378ADD'}`,
@@ -909,21 +966,26 @@ export default function App() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontSize: 11, fontWeight: 600, color: '#1F4E79' }}>
-                          {locationRef.slice(0, 50)}
+                          {locationRef.slice(0, 45)}
                         </div>
-                        <div style={{ fontSize: 11, color: '#333', marginTop: 3 }}>{noteText}</div>
-                        {actionText && (
-                          <div style={{ fontSize: 10, color: '#EF9F27', marginTop: 2 }}>⚡ {actionText}</div>
-                        )}
+                        <div style={{ fontSize: 11, color: '#333', marginTop: 2 }}>{noteText}</div>
+                        {actionText && <div style={{ fontSize: 10, color: '#EF9F27', marginTop: 2 }}>⚡ {actionText}</div>}
                       </div>
-                      <div style={{ textAlign: 'right', marginLeft: 8, whiteSpace: 'nowrap' }}>
+                      <div style={{ textAlign: 'right', marginLeft: 8 }}>
                         <div style={{ fontSize: 10, fontWeight: 700, color: overdue ? '#E24B4A' : '#378ADD' }}>
-                          {overdue ? '🔴 Overdue' : '📅'}
-                        </div>
-                        <div style={{ fontSize: 10, color: overdue ? '#E24B4A' : '#378ADD' }}>
-                          {formatDueDate(dueDate)}
+                          {overdue ? '🔴' : '📅'} {formatDueDate(dueDate)}
                         </div>
                       </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 5, marginTop: 6 }}>
+                      <button onClick={() => handleAction('COMPLETED')} style={{
+                        fontSize: 10, padding: '3px 8px', borderRadius: 10, border: 'none',
+                        background: '#E8F5E9', color: '#4CAF7D', cursor: 'pointer', fontWeight: 600,
+                      }}>✅ Done</button>
+                      <button onClick={() => handleAction('PARKED')} style={{
+                        fontSize: 10, padding: '3px 8px', borderRadius: 10, border: 'none',
+                        background: '#F3E5F5', color: '#9C27B0', cursor: 'pointer', fontWeight: 600,
+                      }}>🅿️ Park</button>
                     </div>
                   </div>
                 );
@@ -985,14 +1047,16 @@ export default function App() {
                     const adv = row.adv_sr_no || row.advt_srno || '';
                     const advKey = adv.trim().toUpperCase();
                     const lecData = lecByAdvSrNo ? lecByAdvSrNo.get(advKey) : null;
-                    const pendency = lecData ? parseInt(lecData.pendency_of_days || lecData.pendency || '0') : null;
-                    const lecLastDate = lecData ? (lecData.lec_last_date || lecData.lec_letter_last_date || '') : null;
-                    const lecLetterSent = lecData ? (lecData.lec_letter_sent_on || lecData.letter_send || '') : null;
-                    const fileReceived = lecData ? (lecData.lec_file_received_in_office_yesno || lecData.file_received || '') : null;
-                    const m1 = lecData ? (lecData.m1 || '') : null;
-                    const m2 = lecData ? (lecData.m2 || '') : null;
-                    const m3 = lecData ? (lecData.m3 || '') : null;
-                    const lecRemarks = lecData ? (lecData.remarks || lecData['20052026'] || '') : null;
+                    const fvcData = fvcByAdvSrNo ? fvcByAdvSrNo.get(advKey) : null;
+                    const enrichData = selectedStage === 'FVC Pending' ? fvcData : lecData;
+                    const pendency = enrichData ? parseInt(enrichData.pendency_of_days || enrichData.pendency || '0') : null;
+                    const lastDate = enrichData ? (enrichData.lec_last_date || enrichData.lec_letter_last_date || enrichData.fvc_last_date || '') : null;
+                    const letterSent = enrichData ? (enrichData.lec_letter_sent_on || enrichData.fvc_letter_sent_on || enrichData.letter_send || '') : null;
+                    const fileReceived = enrichData ? (enrichData.lec_file_received_in_office_yesno || enrichData.file_received || '') : null;
+                    const m1 = enrichData ? (enrichData.m1 || enrichData['m1'] || '') : null;
+                    const m2 = enrichData ? (enrichData.m2 || enrichData['m2'] || '') : null;
+                    const m3 = enrichData ? (enrichData.m3 || enrichData['m3'] || '') : null;
+                    const enrichRemarks = enrichData ? (enrichData.remarks || '') : null;
                     return (
                       <div key={i} style={{
                         borderLeft: `3px solid ${alertColor(alert?.level || 'grey')}`,
@@ -1013,18 +1077,18 @@ export default function App() {
                           </div>
                         )}
 
-                        {/* LEC enriched data */}
-                        {lecData && selectedStage === 'LEC Pending' && (
+                        {/* LEC/FVC enriched data */}
+                        {enrichData && (selectedStage === 'LEC Pending' || selectedStage === 'FVC Pending') && (
                           <div style={{ marginTop: 5, paddingTop: 5, borderTop: '1px solid #eee' }}>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 3 }}>
-                              {lecLetterSent && (
+                              {letterSent && (
                                 <div style={{ fontSize: 10, color: '#666' }}>
-                                  📬 Letter: <span style={{ color: '#333' }}>{lecLetterSent}</span>
+                                  📬 Letter: <span style={{ color: '#333' }}>{letterSent}</span>
                                 </div>
                               )}
-                              {lecLastDate && (
+                              {lastDate && (
                                 <div style={{ fontSize: 10, color: '#666' }}>
-                                  📅 Last date: <span style={{ color: pendency < 0 ? '#E24B4A' : '#333', fontWeight: pendency < 0 ? 700 : 400 }}>{lecLastDate}</span>
+                                  📅 Last date: <span style={{ color: pendency < 0 ? '#E24B4A' : '#333', fontWeight: pendency < 0 ? 700 : 400 }}>{lastDate}</span>
                                 </div>
                               )}
                               {pendency !== null && (
@@ -1046,9 +1110,9 @@ export default function App() {
                                 {m3 && m3 !== 'NA' && <div style={{ fontSize: 10, color: '#555' }}>M3: {m3}</div>}
                               </div>
                             )}
-                            {lecRemarks && lecRemarks.trim() && (
+                            {enrichRemarks && enrichRemarks.trim() && (
                               <div style={{ fontSize: 10, color: '#888', marginTop: 3, fontStyle: 'italic' }}>
-                                📝 {lecRemarks.slice(0, 80)}
+                                📝 {enrichRemarks.slice(0, 100)}
                               </div>
                             )}
                           </div>
