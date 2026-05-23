@@ -115,6 +115,7 @@ export const WRITEBACK_COLUMNS = {
 
 // Status value normalisation map — handles inconsistent capitalisation
 export const STATUS_NORMALISE = {
+  'commissioned': 'Commissioned',
   'loi issued': 'LOI Issued',
   'draw of lots': 'Draw of Lots',
   'isd & doc pending': 'ISD & DOC Pending',

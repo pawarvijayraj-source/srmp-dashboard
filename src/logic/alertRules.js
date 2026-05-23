@@ -169,6 +169,8 @@ export function getModule1Alert(row, source) {
       return { level: ALERT_LEVELS.BLUE, pendingOwner: PENDING_OWNERS.STATE_OFFICE, action: 'Draw of Lots to be conducted', priority: 6, bucket: 'actions' };
     case 'LOI Issued':
       return { level: ALERT_LEVELS.GREEN, pendingOwner: null, action: 'LOI issued — now in Module 2', priority: 10, bucket: 'none' };
+    case 'Commissioned':
+      return { level: ALERT_LEVELS.GREEN, pendingOwner: null, action: 'Commissioned — complete', priority: 99, bucket: 'none' };
     case 'NIL Selection':
     case 'Dropped':
     case 'Cancelled':
