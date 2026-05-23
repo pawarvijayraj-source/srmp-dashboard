@@ -707,6 +707,8 @@ export default function App() {
   const { dsb2023, dsb2018, loi, lecByAdvSrNo, fvcByAdvSrNo, writeback, loading, error, lastFetched, refresh } = useGoogleSheets();
   const [activeTab, setActiveTab] = useState('all');
   const [selectedStage, setSelectedStage] = useState(null);
+  const [todoRefreshKey, setTodoRefreshKey] = useState(0);
+  const [todoPendingActions, setTodoPendingActions] = useState({}); // tracks optimistic UI state
 
   const allModule1 = useMemo(() => [...dsb2023, ...dsb2018], [dsb2023, dsb2018]);
   const allRows = useMemo(() => [...allModule1, ...loi], [allModule1, loi]);
@@ -801,8 +803,9 @@ export default function App() {
     [loi]
   );
 
-  const redCount = allRows.filter(r => r._alert?.level === ALERT_LEVELS.RED).length;
-  const amberCount = allRows.filter(r => r._alert?.level === ALERT_LEVELS.AMBER).length;
+  // Top bar: only count Smart Actions bucket (exclude court, neglected, cancellation)
+  const redCount = myActions.filter(r => r._alert?.level === ALERT_LEVELS.RED).length;
+  const amberCount = myActions.filter(r => r._alert?.level === ALERT_LEVELS.AMBER).length;
   const commissioningTarget = loi.filter(r => (r.financial_year_of_expected_commissioning || '').includes('2026-27')).length;
 
   const visibleActions = useMemo(() => {
@@ -902,13 +905,13 @@ export default function App() {
         <div style={{ background: '#fff', borderRadius: 12, padding: 14, border: '1px solid #E8ECF0' }}>
           <div style={{ fontWeight: 700, fontSize: 13, color: '#1F4E79', marginBottom: 6, display: 'flex', justifyContent: 'space-between' }}>
             <span>✅ My To-Do</span>
-            <span style={{ fontSize: 11, color: myTodos.filter(n => isDueDateOverdue(n.targetduedate || n.target_due_date || '')).length > 0 ? '#E24B4A' : '#888', fontWeight: 600 }}>
-              {myTodos.length} tasks · today+2d
+            <span style={{ fontSize: 11, color: myTodos.filter(n => { const d = n.targetduedate || n.target_due_date || ''; const k = `${n.advsrno||n.adv_sr_no||''}_${d}`; return !todoPendingActions[k] && isDueDateOverdue(d); }).length > 0 ? '#E24B4A' : '#888', fontWeight: 600 }}>
+              {myTodos.filter(n => { const d = n.targetduedate||n.target_due_date||''; const k = `${n.advsrno||n.adv_sr_no||''}_${d}`; return !todoPendingActions[k]; }).length} tasks · today+2d
             </span>
           </div>
           <div style={{ fontSize: 10, color: '#bbb', marginBottom: 8 }}>Showing overdue + today + next 2 days only</div>
           <div style={{ maxHeight: 300, overflowY: 'auto' }}>
-            {myTodos.length === 0 ? (
+            {myTodos.filter(n => { const d = n.targetduedate||n.target_due_date||''; const k = `${n.advsrno||n.adv_sr_no||''}_${d}`; return !todoPendingActions[k]; }).length === 0 ? (
               <div style={{ textAlign: 'center', color: '#999', padding: 20, fontSize: 12 }}>
                 No tasks due today or next 2 days<br/>
                 <span style={{ fontSize: 11 }}>Search location → add note with due date</span>
@@ -920,9 +923,13 @@ export default function App() {
                 const noteText = n.remarks || '';
                 const actionText = n.escalationreason || n.escalation_reason || '';
                 const locationRef = n.loirefno || n.loi_ref_no || n.advsrno || n.adv_sr_no || '';
-                const rowIndex = n._row_index;
+                const todoKey = `${n.advsrno || n.adv_sr_no || ''}_${dueDate}`;
+                const pendingStatus = todoPendingActions[todoKey];
+
+                if (pendingStatus === 'COMPLETED' || pendingStatus === 'PARKED') return null;
 
                 const handleAction = async (newStatus) => {
+                  setTodoPendingActions(prev => ({ ...prev, [todoKey]: newStatus }));
                   try {
                     await fetch(APPS_SCRIPT_URL, {
                       method: 'POST',
@@ -953,8 +960,10 @@ export default function App() {
                         }
                       }),
                     });
-                    setTimeout(() => window.location.reload(), 500);
-                  } catch(e) { console.error(e); }
+                  } catch(e) {
+                    setTodoPendingActions(prev => { const next = {...prev}; delete next[todoKey]; return next; });
+                    console.error('Save failed', e);
+                  }
                 };
 
                 return (
@@ -991,6 +1000,21 @@ export default function App() {
                 );
               })
             )}
+          </div>
+        </div>
+
+        {/* RSA HEALTH GRID */}
+        <div style={{ background: '#fff', borderRadius: 12, padding: 14, border: '1px solid #E8ECF0' }}>
+          <div style={{ fontWeight: 700, fontSize: 13, color: '#1F4E79', marginBottom: 10, display: 'flex', justifyContent: 'space-between' }}>
+            <span>🗺️ RSA Health</span>
+            <span style={{ fontSize: 11, color: '#888' }}>{RSA_LIST.length} RSAs</span>
+          </div>
+          <div>
+            {RSA_LIST.map(rsa => {
+              const rows1 = dsb2023.filter(r => (r.sales_area || '').trim() === rsa);
+              const rows2 = [...dsb2018.filter(r => (r.sales_area || '').trim() === rsa), ...loi.filter(r => (r.retail_sales_area || '').trim() === rsa)];
+              return <RSAHealthRow key={rsa} rsa={rsa} rows1={rows1} rows2={rows2} />;
+            })}
           </div>
         </div>
 
