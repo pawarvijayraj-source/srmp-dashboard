@@ -115,26 +115,67 @@ export const WRITEBACK_COLUMNS = {
 
 // Status value normalisation map — handles inconsistent capitalisation
 export const STATUS_NORMALISE = {
-  'commissioned': 'Commissioned',
   'loi issued': 'LOI Issued',
   'draw of lots': 'Draw of Lots',
   'isd & doc pending': 'ISD & DOC Pending',
   'isd pending': 'ISD & DOC Pending',
   'group 3': 'Group 3',
   'group3': 'Group 3',
+  'group_3': 'Group 3',
+  'group 3 ': 'Group 3',
+  'group3 ': 'Group 3',
   'asc pending': 'ASC Pending',
   'lec pending': 'LEC Pending',
   'fvc pending': 'FVC Pending',
   'court case': 'Court Case',
   'nil selection': 'NIL Selection',
+  'nil salection': 'NIL Selection',
   'dropped': 'Dropped',
+  'drop location': 'Dropped',
   'cancelled': 'Cancelled',
   'commissioned': 'Commissioned',
+  'no offer against our advertisement': 'NIL Selection',
 };
 
 export function normaliseStatus(raw) {
   if (!raw) return '';
   return STATUS_NORMALISE[raw.toLowerCase().trim()] || raw.trim();
+}
+
+// RSA name normalisation — maps all sheet variants to canonical names
+export const RSA_NORMALISE = {
+  'beed rsa': 'Beed RSA',
+  'beed sa': 'Beed RSA',
+  'buldhana rsa': 'Buldhana RSA',
+  'buldhana sa': 'Buldhana RSA',
+  'dhule rsa': 'Dhule RSA',
+  'dhule  rsa': 'Dhule RSA',
+  'jalgaon north rsa': 'Jalgaon North RSA',
+  'jalgaon south rsa': 'Jalgaon South RSA',
+  'nandurbar rsa': 'Nandurbar RSA',
+  'aurangabad east rsa': 'Aurangabad East RSA',
+  'aurangabad east rsa ': 'Aurangabad East RSA',
+  'aurangabad south rsa': 'Aurangabad South RSA',
+  'aurangabad north & west rsa': 'Aurangabad N&W RSA',
+  'aurangabad n&w rsa': 'Aurangabad N&W RSA',
+  'aurangabad north and west rsa': 'Aurangabad N&W RSA',
+};
+
+export const RSA_LIST = [
+  'Beed RSA',
+  'Buldhana RSA',
+  'Dhule RSA',
+  'Jalgaon North RSA',
+  'Jalgaon South RSA',
+  'Nandurbar RSA',
+  'Aurangabad East RSA',
+  'Aurangabad South RSA',
+  'Aurangabad N&W RSA',
+];
+
+export function normaliseRSA(raw) {
+  if (!raw) return '';
+  return RSA_NORMALISE[raw.trim().toLowerCase()] || raw.trim();
 }
 
 // Find a value in a row by trying multiple possible header keys

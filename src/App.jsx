@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useGoogleSheets } from './hooks/useGoogleSheets';
 import { ALERT_LEVELS, isMyAction, isCourtCase, isNeglected, isCancellation, getCancellationAction, parseTargetMonth, parseFlexDate } from './logic/alertRules';
+import { RSA_LIST, normaliseRSA } from './config/columnMaps';
 import './App.css';
 
 const APPS_SCRIPT_URL = import.meta.env.VITE_APPS_SCRIPT_URL;
@@ -615,68 +616,7 @@ function CommissioningWatchlist({ loi }) {
   );
 }
 
-// ── PARK MODAL ───────────────────────────────────────────────
-function ParkModal({ todo, onConfirm, onCancel }) {
-  const [date, setDate] = useState('');
-  const [time, setTime] = useState('09:00');
-
-  const handleConfirm = () => {
-    if (!date) return;
-    // Convert date+time to DDMMYY HHMM format
-    const d = new Date(date + 'T' + time);
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const yy = String(d.getFullYear()).slice(2);
-    const hh = String(d.getHours()).padStart(2, '0');
-    const min = String(d.getMinutes()).padStart(2, '0');
-    onConfirm(`${dd}${mm}${yy} ${hh}${min}`);
-  };
-
-  // Default to tomorrow
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const minDate = tomorrow.toISOString().split('T')[0];
-
-  return (
-    <div style={{
-      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
-    }}>
-      <div style={{ background: '#fff', borderRadius: 14, padding: 22, width: 300, boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: '#1F4E79', marginBottom: 4 }}>🅿️ Park this task</div>
-        <div style={{ fontSize: 11, color: '#888', marginBottom: 14 }}>
-          Set when to resurface in To-Do list
-        </div>
-        <div style={{ fontSize: 11, color: '#555', marginBottom: 4, fontWeight: 600 }}>Review date</div>
-        <input
-          type="date"
-          value={date}
-          min={minDate}
-          onChange={e => setDate(e.target.value)}
-          style={{ width: '100%', padding: '7px 10px', borderRadius: 8, border: '1px solid #ddd', fontSize: 13, boxSizing: 'border-box', marginBottom: 10, outline: 'none' }}
-        />
-        <div style={{ fontSize: 11, color: '#555', marginBottom: 4, fontWeight: 600 }}>Review time</div>
-        <input
-          type="time"
-          value={time}
-          onChange={e => setTime(e.target.value)}
-          style={{ width: '100%', padding: '7px 10px', borderRadius: 8, border: '1px solid #ddd', fontSize: 13, boxSizing: 'border-box', marginBottom: 16, outline: 'none' }}
-        />
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={onCancel} style={{
-            flex: 1, padding: '8px', borderRadius: 8, border: '1px solid #ddd',
-            background: '#f5f5f5', color: '#555', cursor: 'pointer', fontSize: 12,
-          }}>Cancel</button>
-          <button onClick={handleConfirm} disabled={!date} style={{
-            flex: 2, padding: '8px', borderRadius: 8, border: 'none',
-            background: date ? '#9C27B0' : '#ddd', color: '#fff',
-            cursor: date ? 'pointer' : 'not-allowed', fontSize: 12, fontWeight: 700,
-          }}>Park until {date ? new Date(date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '...'}</button>
-        </div>
-      </div>
-    </div>
-  );
-}
+// ── RSA HEALTH ROW ───────────────────────────────────────────
 function RSAHealthRow({ rsa, rows1, rows2 }) {
   const allRows = [...rows1, ...rows2];
   const red = allRows.filter(r => r._alert?.level === ALERT_LEVELS.RED).length;
@@ -702,126 +642,7 @@ function RSAHealthRow({ rsa, rows1, rows2 }) {
   );
 }
 
-// ── RSA HEALTH ROW ───────────────────────────────────────────
-function RSAHealthPanel({ allRows, loi, courtCases, neglectedCases, cancellationCases }) {
-  const [selectedRsa, setSelectedRsa] = useState(null);
-
-  // Build per-RSA data — all buckets
-  const rsaData = useMemo(() => {
-    return RSA_LIST.map(rsa => {
-      const matchRsa = r => {
-        const s = (r.sales_area || r.retail_sales_area || '').trim();
-        return s === rsa || s.toLowerCase() === rsa.toLowerCase();
-      };
-      const actions = allRows.filter(r => matchRsa(r) && r._alert?.bucket === 'actions' && r._alert?.level !== ALERT_LEVELS.GREY && r._alert?.priority < 20);
-      const court = courtCases.filter(r => matchRsa(r));
-      const neglected = neglectedCases.filter(r => matchRsa(r));
-      const cancel = cancellationCases.filter(r => matchRsa(r));
-      const red = actions.filter(r => r._alert?.level === ALERT_LEVELS.RED).length;
-      const amber = actions.filter(r => r._alert?.level === ALERT_LEVELS.AMBER).length;
-      return { rsa, actions, court, neglected, cancel, red, amber, total: actions.length + court.length + neglected.length + cancel.length };
-    });
-  }, [allRows, courtCases, neglectedCases, cancellationCases]);
-
-  if (selectedRsa) {
-    const d = rsaData.find(r => r.rsa === selectedRsa);
-    return (
-      <div>
-        <button onClick={() => setSelectedRsa(null)} style={{ fontSize: 11, color: '#378ADD', background: 'none', border: 'none', cursor: 'pointer', marginBottom: 8, padding: 0 }}>← All RSAs</button>
-        <div style={{ fontWeight: 700, fontSize: 13, color: '#1F4E79', marginBottom: 10 }}>🗺️ {selectedRsa}</div>
-        <div style={{ maxHeight: 340, overflowY: 'auto' }}>
-          {/* Smart Actions */}
-          {d.actions.length > 0 && (
-            <div style={{ marginBottom: 8 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: '#E24B4A', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>⚡ Actions ({d.actions.length})</div>
-              {d.actions.slice(0, 8).map((row, i) => (
-                <div key={i} style={{ borderLeft: `3px solid ${alertColor(row._alert.level)}`, background: alertBg(row._alert.level), borderRadius: 6, padding: '6px 8px', marginBottom: 4 }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: '#1F4E79' }}>{getLocation(row).slice(0, 50)}</div>
-                  <div style={{ fontSize: 10, color: alertColor(row._alert.level), marginTop: 2 }}>{row._alert.action}</div>
-                  <div style={{ fontSize: 10, color: '#999', marginTop: 1 }}>{row.district || row.district_name} · {row._source === 'LOI_PENDING' ? 'M2' : 'M1'}</div>
-                </div>
-              ))}
-            </div>
-          )}
-          {/* Court */}
-          {d.court.length > 0 && (
-            <div style={{ marginBottom: 8 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: '#E24B4A', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>⚖️ Court Cases ({d.court.length})</div>
-              {d.court.map((row, i) => (
-                <div key={i} style={{ borderLeft: '3px solid #E24B4A', background: '#FFF0F0', borderRadius: 6, padding: '6px 8px', marginBottom: 4 }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: '#1F4E79' }}>{getLocation(row).slice(0, 50)}</div>
-                  <div style={{ fontSize: 10, color: '#999' }}>{row.district || row.district_name}</div>
-                </div>
-              ))}
-            </div>
-          )}
-          {/* Neglected */}
-          {d.neglected.length > 0 && (
-            <div style={{ marginBottom: 8 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: '#EF9F27', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>😴 Neglected ({d.neglected.length})</div>
-              {d.neglected.map((row, i) => (
-                <div key={i} style={{ borderLeft: '3px solid #EF9F27', background: '#FFFBF0', borderRadius: 6, padding: '6px 8px', marginBottom: 4 }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: '#1F4E79' }}>{getLocation(row).slice(0, 50)}</div>
-                  <div style={{ fontSize: 10, color: '#EF9F27' }}>{row._alert?.action}</div>
-                </div>
-              ))}
-            </div>
-          )}
-          {/* Cancellation */}
-          {d.cancel.length > 0 && (
-            <div style={{ marginBottom: 8 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>❌ Cancellation ({d.cancel.length})</div>
-              {d.cancel.map((row, i) => (
-                <div key={i} style={{ borderLeft: '3px solid #999', background: '#F8F8F8', borderRadius: 6, padding: '6px 8px', marginBottom: 4 }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: '#1F4E79' }}>{getLocation(row).slice(0, 50)}</div>
-                  <div style={{ fontSize: 10, color: '#666' }}>{row._alert?.action || getCancellationAction(row)}</div>
-                </div>
-              ))}
-            </div>
-          )}
-          {d.total === 0 && <div style={{ textAlign: 'center', color: '#4CAF7D', padding: 20, fontSize: 12 }}>✅ All clear</div>}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <div style={{ maxHeight: 360, overflowY: 'auto' }}>
-        {rsaData.map(({ rsa, red, amber, court, neglected, cancel, total }) => (
-          <div key={rsa} onClick={() => setSelectedRsa(rsa)} style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '8px 10px', background: '#F8FAFC', borderRadius: 8, marginBottom: 5,
-            cursor: 'pointer', border: '1px solid transparent', transition: 'all 0.15s',
-          }}
-            onMouseEnter={e => { e.currentTarget.style.background = '#EEF4FF'; e.currentTarget.style.borderColor = '#378ADD'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = '#F8FAFC'; e.currentTarget.style.borderColor = 'transparent'; }}>
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: '#1F4E79' }}>{rsa}</div>
-              <div style={{ fontSize: 10, color: '#999', marginTop: 1 }}>
-                {[
-                  red > 0 && `${red} red`,
-                  amber > 0 && `${amber} amber`,
-                  court.length > 0 && `${court.length} court`,
-                  neglected.length > 0 && `${neglected.length} neglected`,
-                  cancel.length > 0 && `${cancel.length} cancel`,
-                ].filter(Boolean).join(' · ') || 'All clear'}
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-              {red > 0 && <span style={{ width: 22, height: 22, borderRadius: '50%', background: '#E24B4A', color: '#fff', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>{red}</span>}
-              {amber > 0 && <span style={{ width: 22, height: 22, borderRadius: '50%', background: '#EF9F27', color: '#fff', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>{amber}</span>}
-              {court.length > 0 && <span style={{ fontSize: 9, padding: '2px 5px', borderRadius: 8, background: '#FFF0F0', color: '#E24B4A', fontWeight: 700 }}>⚖️{court.length}</span>}
-              {neglected.length > 0 && <span style={{ fontSize: 9, padding: '2px 5px', borderRadius: 8, background: '#FFFBF0', color: '#EF9F27', fontWeight: 700 }}>😴{neglected.length}</span>}
-              {total === 0 && <span style={{ fontSize: 11, color: '#4CAF7D' }}>✅</span>}
-              <span style={{ fontSize: 11, color: '#ccc', marginLeft: 2 }}>▶</span>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+// ── ACTION CARD ──────────────────────────────────────────────
 function ActionCard({ row }) {
   const alert = row._alert;
   const location = getLocation(row);
@@ -875,12 +696,131 @@ function MetricCard({ label, value, sub, color }) {
   );
 }
 
-// ── RSA LIST ─────────────────────────────────────────────────
-const RSA_LIST = [
-  'Beed', 'Jalgaon North', 'Aurangabad South', 'Dhule',
-  'Aurangabad N&W', 'Jalgaon South', 'Aurangabad East',
-  'Buldhana', 'Nandurbar',
-];
+// ── PARK MODAL ───────────────────────────────────────────────
+function ParkModal({ onConfirm, onCancel }) {
+  const [date, setDate] = useState('');
+  const [time, setTime] = useState('09:00');
+  const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+  const minDate = tomorrow.toISOString().split('T')[0];
+
+  const handleConfirm = () => {
+    if (!date) return;
+    const d = new Date(date + 'T' + time);
+    const dd = String(d.getDate()).padStart(2,'0');
+    const mm = String(d.getMonth()+1).padStart(2,'0');
+    const yy = String(d.getFullYear()).slice(2);
+    const hh = String(d.getHours()).padStart(2,'0');
+    const min = String(d.getMinutes()).padStart(2,'0');
+    onConfirm(`${dd}${mm}${yy} ${hh}${min}`);
+  };
+
+  return (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000 }}>
+      <div style={{ background:'#fff', borderRadius:14, padding:22, width:300, boxShadow:'0 8px 32px rgba(0,0,0,0.18)' }}>
+        <div style={{ fontSize:14, fontWeight:700, color:'#1F4E79', marginBottom:4 }}>🅿️ Park this task</div>
+        <div style={{ fontSize:11, color:'#888', marginBottom:14 }}>Task will reappear in To-Do on this date</div>
+        <div style={{ fontSize:11, color:'#555', marginBottom:4, fontWeight:600 }}>Review date</div>
+        <input type="date" value={date} min={minDate} onChange={e => setDate(e.target.value)}
+          style={{ width:'100%', padding:'7px 10px', borderRadius:8, border:'1px solid #ddd', fontSize:13, boxSizing:'border-box', marginBottom:10, outline:'none' }} />
+        <div style={{ fontSize:11, color:'#555', marginBottom:4, fontWeight:600 }}>Review time</div>
+        <input type="time" value={time} onChange={e => setTime(e.target.value)}
+          style={{ width:'100%', padding:'7px 10px', borderRadius:8, border:'1px solid #ddd', fontSize:13, boxSizing:'border-box', marginBottom:16, outline:'none' }} />
+        <div style={{ display:'flex', gap:8 }}>
+          <button onClick={onCancel} style={{ flex:1, padding:'8px', borderRadius:8, border:'1px solid #ddd', background:'#f5f5f5', color:'#555', cursor:'pointer', fontSize:12 }}>Cancel</button>
+          <button onClick={handleConfirm} disabled={!date} style={{ flex:2, padding:'8px', borderRadius:8, border:'none', background: date ? '#9C27B0' : '#ddd', color:'#fff', cursor: date ? 'pointer' : 'not-allowed', fontSize:12, fontWeight:700 }}>
+            Park until {date ? new Date(date+'T12:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short'}) : '...'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── RSA HEALTH PANEL ─────────────────────────────────────────
+function RSAHealthPanel({ allRows, courtCases, neglectedCases, cancellationCases }) {
+  const [selectedRsa, setSelectedRsa] = useState(null);
+
+  const rsaData = useMemo(() => RSA_LIST.map(rsa => {
+    const match = r => normaliseRSA(r.sales_area || r.retail_sales_area || '') === rsa;
+    const actions = allRows.filter(r => match(r) && r._alert?.bucket === 'actions' && r._alert?.level !== ALERT_LEVELS.GREY && (r._alert?.priority || 99) < 20);
+    const court = courtCases.filter(r => match(r));
+    const neglected = neglectedCases.filter(r => match(r));
+    const cancel = cancellationCases.filter(r => match(r));
+    const red = actions.filter(r => r._alert?.level === ALERT_LEVELS.RED).length;
+    const amber = actions.filter(r => r._alert?.level === ALERT_LEVELS.AMBER).length;
+    return { rsa, actions, court, neglected, cancel, red, amber, total: actions.length + court.length + neglected.length + cancel.length };
+  }), [allRows, courtCases, neglectedCases, cancellationCases]);
+
+  if (selectedRsa) {
+    const d = rsaData.find(r => r.rsa === selectedRsa);
+    return (
+      <div>
+        <button onClick={() => setSelectedRsa(null)} style={{ fontSize:11, color:'#378ADD', background:'none', border:'none', cursor:'pointer', marginBottom:8, padding:0 }}>← All RSAs</button>
+        <div style={{ fontWeight:700, fontSize:12, color:'#1F4E79', marginBottom:8 }}>🗺️ {selectedRsa}</div>
+        <div style={{ maxHeight:340, overflowY:'auto' }}>
+          {d.actions.length > 0 && <div style={{ fontSize:10, fontWeight:700, color:'#E24B4A', textTransform:'uppercase', letterSpacing:0.5, marginBottom:4 }}>⚡ Actions ({d.actions.length})</div>}
+          {d.actions.map((row,i) => (
+            <div key={i} style={{ borderLeft:`3px solid ${alertColor(row._alert.level)}`, background:alertBg(row._alert.level), borderRadius:6, padding:'6px 8px', marginBottom:4 }}>
+              <div style={{ fontSize:11, fontWeight:600, color:'#1F4E79' }}>{getLocation(row).slice(0,52)}</div>
+              <div style={{ fontSize:10, color:alertColor(row._alert.level), marginTop:2 }}>{row._alert.action}</div>
+              <div style={{ fontSize:10, color:'#999' }}>{row.district||row.district_name} · {row._source==='LOI_PENDING'?'M2':'M1'}</div>
+            </div>
+          ))}
+          {d.court.length > 0 && <div style={{ fontSize:10, fontWeight:700, color:'#E24B4A', textTransform:'uppercase', letterSpacing:0.5, margin:'8px 0 4px' }}>⚖️ Court ({d.court.length})</div>}
+          {d.court.map((row,i) => (
+            <div key={i} style={{ borderLeft:'3px solid #E24B4A', background:'#FFF0F0', borderRadius:6, padding:'6px 8px', marginBottom:4 }}>
+              <div style={{ fontSize:11, fontWeight:600, color:'#1F4E79' }}>{getLocation(row).slice(0,52)}</div>
+              <div style={{ fontSize:10, color:'#999' }}>{row.district||row.district_name}</div>
+            </div>
+          ))}
+          {d.neglected.length > 0 && <div style={{ fontSize:10, fontWeight:700, color:'#EF9F27', textTransform:'uppercase', letterSpacing:0.5, margin:'8px 0 4px' }}>😴 Neglected ({d.neglected.length})</div>}
+          {d.neglected.map((row,i) => (
+            <div key={i} style={{ borderLeft:'3px solid #EF9F27', background:'#FFFBF0', borderRadius:6, padding:'6px 8px', marginBottom:4 }}>
+              <div style={{ fontSize:11, fontWeight:600, color:'#1F4E79' }}>{getLocation(row).slice(0,52)}</div>
+              <div style={{ fontSize:10, color:'#EF9F27' }}>{row._alert?.action}</div>
+            </div>
+          ))}
+          {d.cancel.length > 0 && <div style={{ fontSize:10, fontWeight:700, color:'#888', textTransform:'uppercase', letterSpacing:0.5, margin:'8px 0 4px' }}>❌ Cancellation ({d.cancel.length})</div>}
+          {d.cancel.map((row,i) => (
+            <div key={i} style={{ borderLeft:'3px solid #999', background:'#F8F8F8', borderRadius:6, padding:'6px 8px', marginBottom:4 }}>
+              <div style={{ fontSize:11, fontWeight:600, color:'#1F4E79' }}>{getLocation(row).slice(0,52)}</div>
+              <div style={{ fontSize:10, color:'#666' }}>{getCancellationAction(row)}</div>
+            </div>
+          ))}
+          {d.total === 0 && <div style={{ textAlign:'center', color:'#4CAF7D', padding:20, fontSize:12 }}>✅ All clear for this RSA</div>}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ maxHeight:360, overflowY:'auto' }}>
+      {rsaData.map(({ rsa, red, amber, court, neglected, cancel, total }) => (
+        <div key={rsa} onClick={() => setSelectedRsa(rsa)} style={{
+          display:'flex', alignItems:'center', justifyContent:'space-between',
+          padding:'8px 10px', background:'#F8FAFC', borderRadius:8, marginBottom:5,
+          cursor:'pointer', border:'1px solid transparent',
+        }}
+          onMouseEnter={e => { e.currentTarget.style.background='#EEF4FF'; e.currentTarget.style.borderColor='#378ADD'; }}
+          onMouseLeave={e => { e.currentTarget.style.background='#F8FAFC'; e.currentTarget.style.borderColor='transparent'; }}>
+          <div>
+            <div style={{ fontSize:12, fontWeight:600, color:'#1F4E79' }}>{rsa}</div>
+            <div style={{ fontSize:10, color:'#999', marginTop:1 }}>
+              {[red>0&&`${red} red`, amber>0&&`${amber} amber`, court.length>0&&`${court.length} court`, neglected.length>0&&`${neglected.length} neglected`, cancel.length>0&&`${cancel.length} cancel`].filter(Boolean).join(' · ') || '✅ All clear'}
+            </div>
+          </div>
+          <div style={{ display:'flex', gap:4, alignItems:'center' }}>
+            {red>0 && <span style={{ width:22, height:22, borderRadius:'50%', background:'#E24B4A', color:'#fff', fontSize:10, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700 }}>{red}</span>}
+            {amber>0 && <span style={{ width:22, height:22, borderRadius:'50%', background:'#EF9F27', color:'#fff', fontSize:10, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700 }}>{amber}</span>}
+            {court.length>0 && <span style={{ fontSize:9, padding:'2px 5px', borderRadius:8, background:'#FFF0F0', color:'#E24B4A', fontWeight:700 }}>⚖️{court.length}</span>}
+            {neglected.length>0 && <span style={{ fontSize:9, padding:'2px 5px', borderRadius:8, background:'#FFFBF0', color:'#EF9F27', fontWeight:700 }}>😴{neglected.length}</span>}
+            <span style={{ fontSize:11, color:'#ccc' }}>▶</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 // ── MAIN APP ─────────────────────────────────────────────────
 export default function App() {
@@ -888,7 +828,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('all');
   const [selectedStage, setSelectedStage] = useState(null);
   const [todoPendingActions, setTodoPendingActions] = useState({});
-  const [parkModal, setParkModal] = useState(null); // { todo, key }
+  const [parkModal, setParkModal] = useState(null);
 
   const allModule1 = useMemo(() => [...dsb2023, ...dsb2018], [dsb2023, dsb2018]);
   const allRows = useMemo(() => [...allModule1, ...loi], [allModule1, loi]);
@@ -959,9 +899,9 @@ export default function App() {
         if (moduleId !== 'MEETING_NOTE') return false;
         const dueDate = n.targetduedate || n.target_due_date || '';
         if (!dueDate || dueDate.trim() === '') return false;
-        // Exclude completed or parked
+        // Exclude completed — PARKED with new date gets new target_due_date so it filters by date naturally
         const status = (n.risklevel || n.risk_level || '').toUpperCase();
-        if (status === 'COMPLETED' || status === 'PARKED') return false;
+        if (status === 'COMPLETED') return false;
         // Only show overdue + today + next 2 days
         const d = parseDate(dueDate);
         if (!d) return false;
@@ -1065,7 +1005,6 @@ export default function App() {
       {/* PARK MODAL */}
       {parkModal && (
         <ParkModal
-          todo={parkModal.todo}
           onCancel={() => setParkModal(null)}
           onConfirm={async (newDueDate) => {
             const { todo, key } = parkModal;
@@ -1073,25 +1012,22 @@ export default function App() {
             setTodoPendingActions(prev => ({ ...prev, [key]: 'PARKED' }));
             const locationRef = todo.loirefno || todo.loi_ref_no || todo.advsrno || todo.adv_sr_no || '';
             try {
-              await fetch(APPS_SCRIPT_URL, {
-                method: 'POST', mode: 'no-cors',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'upsert_writeback', data: {
-                  adv_sr_no: todo.advsrno || todo.adv_sr_no || '', loi_ref_no: locationRef,
-                  module_id: 'MEETING_NOTE', macro_stage: 'VISITOR_NOTE',
-                  current_micro_stage: todo.currentmicrostage || todo.current_micro_stage || '',
-                  previous_micro_stage: '', pending_owner: 'Vijayraj', responsibility_type: 'PERSONAL',
-                  current_stage_start_date: todo.currentstagestartdate || '',
-                  target_due_date: newDueDate, last_meaningful_progress_date: new Date().toLocaleDateString('en-GB'),
-                  next_review_date: newDueDate, risk_level: 'TRACKED',
-                  escalation_reason: todo.escalationreason || todo.escalation_reason || '',
-                  exception_flag: '', exception_type: 'MEETING_NOTE', remarks: todo.remarks || '',
-                  updated_by: 'Vijayraj', updated_on: new Date().toISOString(),
-                }}),
+              await fetch(APPS_SCRIPT_URL, { method:'POST', mode:'no-cors', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({ action:'upsert_writeback', data: {
+                  adv_sr_no: todo.advsrno||todo.adv_sr_no||'', loi_ref_no: locationRef,
+                  module_id:'MEETING_NOTE', macro_stage:'VISITOR_NOTE',
+                  current_micro_stage: todo.currentmicrostage||todo.current_micro_stage||'',
+                  previous_micro_stage:'', pending_owner:'Vijayraj', responsibility_type:'PERSONAL',
+                  current_stage_start_date: todo.currentstagestartdate||'',
+                  target_due_date: newDueDate,
+                  last_meaningful_progress_date: new Date().toLocaleDateString('en-GB'),
+                  next_review_date: newDueDate, risk_level:'TRACKED',
+                  escalation_reason: todo.escalationreason||todo.escalation_reason||'',
+                  exception_flag:'', exception_type:'MEETING_NOTE', remarks: todo.remarks||'',
+                  updated_by:'Vijayraj', updated_on: new Date().toISOString(),
+                }})
               });
-            } catch(e) {
-              setTodoPendingActions(prev => { const n = {...prev}; delete n[key]; return n; });
-            }
+            } catch(e) { setTodoPendingActions(prev => { const n={...prev}; delete n[key]; return n; }); }
           }}
         />
       )}
@@ -1118,11 +1054,13 @@ export default function App() {
         <div style={{ background: '#fff', borderRadius: 12, padding: 14, border: '1px solid #E8ECF0' }}>
           <div style={{ fontWeight: 700, fontSize: 13, color: '#1F4E79', marginBottom: 6, display: 'flex', justifyContent: 'space-between' }}>
             <span>✅ My To-Do</span>
-            <span style={{ fontSize: 11, color: myTodos.filter(n => { const k = `${n.advsrno||n.adv_sr_no||''}_${n.targetduedate||n.target_due_date||''}`; return !todoPendingActions[k] && isDueDateOverdue(n.targetduedate||n.target_due_date||''); }).length > 0 ? '#E24B4A' : '#888', fontWeight: 600 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color:
+              myTodos.filter(n => { const k=`${n.advsrno||n.adv_sr_no||''}_${n.targetduedate||n.target_due_date||''}`; return !todoPendingActions[k] && isDueDateOverdue(n.targetduedate||n.target_due_date||''); }).length > 0 ? '#E24B4A' : '#888'
+            }}>
               {myTodos.filter(n => !todoPendingActions[`${n.advsrno||n.adv_sr_no||''}_${n.targetduedate||n.target_due_date||''}`]).length} tasks
             </span>
           </div>
-          <div style={{ fontSize: 10, color: '#bbb', marginBottom: 8 }}>Overdue + today + 2 days · Park sets next review date</div>
+          <div style={{ fontSize: 10, color: '#bbb', marginBottom: 8 }}>Overdue + today + 2 days · Park reschedules</div>
           <div style={{ maxHeight: 300, overflowY: 'auto' }}>
             {myTodos.filter(n => !todoPendingActions[`${n.advsrno||n.adv_sr_no||''}_${n.targetduedate||n.target_due_date||''}`]).length === 0 ? (
               <div style={{ textAlign: 'center', color: '#999', padding: 20, fontSize: 12 }}>
@@ -1136,39 +1074,42 @@ export default function App() {
               const noteText = n.remarks || '';
               const actionText = n.escalationreason || n.escalation_reason || '';
               const locationRef = n.loirefno || n.loi_ref_no || n.advsrno || n.adv_sr_no || '';
+
               const handleDone = async () => {
                 setTodoPendingActions(prev => ({ ...prev, [todoKey]: 'COMPLETED' }));
                 try {
-                  await fetch(APPS_SCRIPT_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'upsert_writeback', data: {
+                  await fetch(APPS_SCRIPT_URL, { method:'POST', mode:'no-cors', headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({ action:'upsert_writeback', data: {
                       adv_sr_no: n.advsrno||n.adv_sr_no||'', loi_ref_no: locationRef,
-                      module_id: 'MEETING_NOTE', macro_stage: 'VISITOR_NOTE',
-                      current_micro_stage: n.currentmicrostage||'', previous_micro_stage: '',
-                      pending_owner: 'Vijayraj', responsibility_type: 'PERSONAL',
-                      current_stage_start_date: n.currentstagestartdate||'', target_due_date: dueDate,
+                      module_id:'MEETING_NOTE', macro_stage:'VISITOR_NOTE',
+                      current_micro_stage: n.currentmicrostage||'', previous_micro_stage:'',
+                      pending_owner:'Vijayraj', responsibility_type:'PERSONAL',
+                      current_stage_start_date: n.currentstagestartdate||'',
+                      target_due_date: dueDate,
                       last_meaningful_progress_date: new Date().toLocaleDateString('en-GB'),
-                      next_review_date: '', risk_level: 'COMPLETED',
-                      escalation_reason: actionText, exception_flag: '', exception_type: 'MEETING_NOTE',
-                      remarks: noteText, updated_by: 'Vijayraj', updated_on: new Date().toISOString(),
-                    }}),
+                      next_review_date:'', risk_level:'COMPLETED',
+                      escalation_reason: actionText, exception_flag:'', exception_type:'MEETING_NOTE',
+                      remarks: noteText, updated_by:'Vijayraj', updated_on: new Date().toISOString(),
+                    }})
                   });
                 } catch(e) { setTodoPendingActions(prev => { const x={...prev}; delete x[todoKey]; return x; }); }
               };
+
               return (
-                <div key={i} style={{ borderLeft: `3px solid ${overdue ? '#E24B4A' : '#378ADD'}`, background: overdue ? '#FFF0F0' : '#F0F6FF', borderRadius: 8, padding: '8px 10px', marginBottom: 6 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: '#1F4E79' }}>{locationRef.slice(0, 38)}</div>
-                      <div style={{ fontSize: 11, color: '#333', marginTop: 2 }}>{noteText}</div>
-                      {actionText && <div style={{ fontSize: 10, color: '#EF9F27', marginTop: 2 }}>⚡ {actionText}</div>}
+                <div key={i} style={{ borderLeft:`3px solid ${overdue?'#E24B4A':'#378ADD'}`, background: overdue?'#FFF0F0':'#F0F6FF', borderRadius:8, padding:'8px 10px', marginBottom:6 }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontSize:11, fontWeight:600, color:'#1F4E79' }}>{locationRef.slice(0,38)}</div>
+                      <div style={{ fontSize:11, color:'#333', marginTop:2 }}>{noteText}</div>
+                      {actionText && <div style={{ fontSize:10, color:'#EF9F27', marginTop:2 }}>⚡ {actionText}</div>}
                     </div>
-                    <div style={{ textAlign: 'right', marginLeft: 8, flexShrink: 0 }}>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: overdue ? '#E24B4A' : '#378ADD' }}>{overdue ? '🔴' : '📅'} {formatDueDate(dueDate)}</div>
+                    <div style={{ textAlign:'right', marginLeft:8, flexShrink:0 }}>
+                      <div style={{ fontSize:10, fontWeight:700, color: overdue?'#E24B4A':'#378ADD' }}>{overdue?'🔴':'📅'} {formatDueDate(dueDate)}</div>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: 5, marginTop: 6 }}>
-                    <button onClick={handleDone} style={{ fontSize: 10, padding: '3px 8px', borderRadius: 10, border: 'none', background: '#E8F5E9', color: '#4CAF7D', cursor: 'pointer', fontWeight: 600 }}>✅ Done</button>
-                    <button onClick={() => setParkModal({ todo: n, key: todoKey })} style={{ fontSize: 10, padding: '3px 8px', borderRadius: 10, border: 'none', background: '#F3E5F5', color: '#9C27B0', cursor: 'pointer', fontWeight: 600 }}>🅿️ Park</button>
+                  <div style={{ display:'flex', gap:5, marginTop:6 }}>
+                    <button onClick={handleDone} style={{ fontSize:10, padding:'3px 8px', borderRadius:10, border:'none', background:'#E8F5E9', color:'#4CAF7D', cursor:'pointer', fontWeight:600 }}>✅ Done</button>
+                    <button onClick={() => setParkModal({ todo:n, key:todoKey })} style={{ fontSize:10, padding:'3px 8px', borderRadius:10, border:'none', background:'#F3E5F5', color:'#9C27B0', cursor:'pointer', fontWeight:600 }}>🅿️ Park</button>
                   </div>
                 </div>
               );
@@ -1180,9 +1121,9 @@ export default function App() {
         <div style={{ background: '#fff', borderRadius: 12, padding: 14, border: '1px solid #E8ECF0' }}>
           <div style={{ fontWeight: 700, fontSize: 13, color: '#1F4E79', marginBottom: 10, display: 'flex', justifyContent: 'space-between' }}>
             <span>🗺️ RSA Health</span>
-            <span style={{ fontSize: 11, color: '#888' }}>{RSA_LIST.length} RSAs · click to review</span>
+            <span style={{ fontSize: 11, color: '#888' }}>click RSA to review</span>
           </div>
-          <RSAHealthPanel allRows={allRows} loi={loi} courtCases={courtCases} neglectedCases={neglectedCases} cancellationCases={cancellationCases} />
+          <RSAHealthPanel allRows={allRows} courtCases={courtCases} neglectedCases={neglectedCases} cancellationCases={cancellationCases} />
         </div>
 
       </div>

@@ -170,7 +170,7 @@ export function getModule1Alert(row, source) {
     case 'LOI Issued':
       return { level: ALERT_LEVELS.GREEN, pendingOwner: null, action: 'LOI issued — now in Module 2', priority: 10, bucket: 'none' };
     case 'Commissioned':
-      return { level: ALERT_LEVELS.GREEN, pendingOwner: null, action: 'Commissioned — complete', priority: 99, bucket: 'none' };
+      return { level: ALERT_LEVELS.GREEN, pendingOwner: null, action: 'Commissioned ✅', priority: 99, bucket: 'none' };
     case 'NIL Selection':
     case 'Dropped':
     case 'Cancelled':
