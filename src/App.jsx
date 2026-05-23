@@ -702,7 +702,6 @@ function ParkModal({ onConfirm, onCancel }) {
   const [time, setTime] = useState('09:00');
   const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
   const minDate = tomorrow.toISOString().split('T')[0];
-
   const handleConfirm = () => {
     if (!date) return;
     const d = new Date(date + 'T' + time);
@@ -713,21 +712,20 @@ function ParkModal({ onConfirm, onCancel }) {
     const min = String(d.getMinutes()).padStart(2,'0');
     onConfirm(`${dd}${mm}${yy} ${hh}${min}`);
   };
-
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000 }}>
       <div style={{ background:'#fff', borderRadius:14, padding:22, width:300, boxShadow:'0 8px 32px rgba(0,0,0,0.18)' }}>
         <div style={{ fontSize:14, fontWeight:700, color:'#1F4E79', marginBottom:4 }}>🅿️ Park this task</div>
-        <div style={{ fontSize:11, color:'#888', marginBottom:14 }}>Task will reappear in To-Do on this date</div>
+        <div style={{ fontSize:11, color:'#888', marginBottom:14 }}>Task reappears in To-Do on this date</div>
         <div style={{ fontSize:11, color:'#555', marginBottom:4, fontWeight:600 }}>Review date</div>
-        <input type="date" value={date} min={minDate} onChange={e => setDate(e.target.value)}
+        <input type="date" value={date} min={minDate} onChange={e=>setDate(e.target.value)}
           style={{ width:'100%', padding:'7px 10px', borderRadius:8, border:'1px solid #ddd', fontSize:13, boxSizing:'border-box', marginBottom:10, outline:'none' }} />
         <div style={{ fontSize:11, color:'#555', marginBottom:4, fontWeight:600 }}>Review time</div>
-        <input type="time" value={time} onChange={e => setTime(e.target.value)}
+        <input type="time" value={time} onChange={e=>setTime(e.target.value)}
           style={{ width:'100%', padding:'7px 10px', borderRadius:8, border:'1px solid #ddd', fontSize:13, boxSizing:'border-box', marginBottom:16, outline:'none' }} />
         <div style={{ display:'flex', gap:8 }}>
           <button onClick={onCancel} style={{ flex:1, padding:'8px', borderRadius:8, border:'1px solid #ddd', background:'#f5f5f5', color:'#555', cursor:'pointer', fontSize:12 }}>Cancel</button>
-          <button onClick={handleConfirm} disabled={!date} style={{ flex:2, padding:'8px', borderRadius:8, border:'none', background: date ? '#9C27B0' : '#ddd', color:'#fff', cursor: date ? 'pointer' : 'not-allowed', fontSize:12, fontWeight:700 }}>
+          <button onClick={handleConfirm} disabled={!date} style={{ flex:2, padding:'8px', borderRadius:8, border:'none', background:date?'#9C27B0':'#ddd', color:'#fff', cursor:date?'pointer':'not-allowed', fontSize:12, fontWeight:700 }}>
             Park until {date ? new Date(date+'T12:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short'}) : '...'}
           </button>
         </div>
@@ -739,16 +737,15 @@ function ParkModal({ onConfirm, onCancel }) {
 // ── RSA HEALTH PANEL ─────────────────────────────────────────
 function RSAHealthPanel({ allRows, courtCases, neglectedCases, cancellationCases }) {
   const [selectedRsa, setSelectedRsa] = useState(null);
-
   const rsaData = useMemo(() => RSA_LIST.map(rsa => {
     const match = r => normaliseRSA(r.sales_area || r.retail_sales_area || '') === rsa;
-    const actions = allRows.filter(r => match(r) && r._alert?.bucket === 'actions' && r._alert?.level !== ALERT_LEVELS.GREY && (r._alert?.priority || 99) < 20);
+    const actions = allRows.filter(r => match(r) && r._alert?.bucket === 'actions' && r._alert?.level !== ALERT_LEVELS.GREY && (r._alert?.priority||99) < 20);
     const court = courtCases.filter(r => match(r));
     const neglected = neglectedCases.filter(r => match(r));
     const cancel = cancellationCases.filter(r => match(r));
     const red = actions.filter(r => r._alert?.level === ALERT_LEVELS.RED).length;
     const amber = actions.filter(r => r._alert?.level === ALERT_LEVELS.AMBER).length;
-    return { rsa, actions, court, neglected, cancel, red, amber, total: actions.length + court.length + neglected.length + cancel.length };
+    return { rsa, actions, court, neglected, cancel, red, amber, total: actions.length+court.length+neglected.length+cancel.length };
   }), [allRows, courtCases, neglectedCases, cancellationCases]);
 
   if (selectedRsa) {
@@ -787,22 +784,17 @@ function RSAHealthPanel({ allRows, courtCases, neglectedCases, cancellationCases
               <div style={{ fontSize:10, color:'#666' }}>{getCancellationAction(row)}</div>
             </div>
           ))}
-          {d.total === 0 && <div style={{ textAlign:'center', color:'#4CAF7D', padding:20, fontSize:12 }}>✅ All clear for this RSA</div>}
+          {d.total === 0 && <div style={{ textAlign:'center', color:'#4CAF7D', padding:20, fontSize:12 }}>✅ All clear</div>}
         </div>
       </div>
     );
   }
-
   return (
     <div style={{ maxHeight:360, overflowY:'auto' }}>
       {rsaData.map(({ rsa, red, amber, court, neglected, cancel, total }) => (
-        <div key={rsa} onClick={() => setSelectedRsa(rsa)} style={{
-          display:'flex', alignItems:'center', justifyContent:'space-between',
-          padding:'8px 10px', background:'#F8FAFC', borderRadius:8, marginBottom:5,
-          cursor:'pointer', border:'1px solid transparent',
-        }}
-          onMouseEnter={e => { e.currentTarget.style.background='#EEF4FF'; e.currentTarget.style.borderColor='#378ADD'; }}
-          onMouseLeave={e => { e.currentTarget.style.background='#F8FAFC'; e.currentTarget.style.borderColor='transparent'; }}>
+        <div key={rsa} onClick={() => setSelectedRsa(rsa)} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 10px', background:'#F8FAFC', borderRadius:8, marginBottom:5, cursor:'pointer', border:'1px solid transparent' }}
+          onMouseEnter={e=>{e.currentTarget.style.background='#EEF4FF';e.currentTarget.style.borderColor='#378ADD';}}
+          onMouseLeave={e=>{e.currentTarget.style.background='#F8FAFC';e.currentTarget.style.borderColor='transparent';}}>
           <div>
             <div style={{ fontSize:12, fontWeight:600, color:'#1F4E79' }}>{rsa}</div>
             <div style={{ fontSize:10, color:'#999', marginTop:1 }}>
@@ -899,7 +891,6 @@ export default function App() {
         if (moduleId !== 'MEETING_NOTE') return false;
         const dueDate = n.targetduedate || n.target_due_date || '';
         if (!dueDate || dueDate.trim() === '') return false;
-        // Exclude completed — PARKED with new date gets new target_due_date so it filters by date naturally
         const status = (n.risklevel || n.risk_level || '').toUpperCase();
         if (status === 'COMPLETED') return false;
         // Only show overdue + today + next 2 days
@@ -1054,9 +1045,7 @@ export default function App() {
         <div style={{ background: '#fff', borderRadius: 12, padding: 14, border: '1px solid #E8ECF0' }}>
           <div style={{ fontWeight: 700, fontSize: 13, color: '#1F4E79', marginBottom: 6, display: 'flex', justifyContent: 'space-between' }}>
             <span>✅ My To-Do</span>
-            <span style={{ fontSize: 11, fontWeight: 600, color:
-              myTodos.filter(n => { const k=`${n.advsrno||n.adv_sr_no||''}_${n.targetduedate||n.target_due_date||''}`; return !todoPendingActions[k] && isDueDateOverdue(n.targetduedate||n.target_due_date||''); }).length > 0 ? '#E24B4A' : '#888'
-            }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: myTodos.filter(n => { const k=`${n.advsrno||n.adv_sr_no||''}_${n.targetduedate||n.target_due_date||''}`; return !todoPendingActions[k] && isDueDateOverdue(n.targetduedate||n.target_due_date||''); }).length > 0 ? '#E24B4A' : '#888' }}>
               {myTodos.filter(n => !todoPendingActions[`${n.advsrno||n.adv_sr_no||''}_${n.targetduedate||n.target_due_date||''}`]).length} tasks
             </span>
           </div>
@@ -1074,7 +1063,6 @@ export default function App() {
               const noteText = n.remarks || '';
               const actionText = n.escalationreason || n.escalation_reason || '';
               const locationRef = n.loirefno || n.loi_ref_no || n.advsrno || n.adv_sr_no || '';
-
               const handleDone = async () => {
                 setTodoPendingActions(prev => ({ ...prev, [todoKey]: 'COMPLETED' }));
                 try {
@@ -1094,9 +1082,8 @@ export default function App() {
                   });
                 } catch(e) { setTodoPendingActions(prev => { const x={...prev}; delete x[todoKey]; return x; }); }
               };
-
               return (
-                <div key={i} style={{ borderLeft:`3px solid ${overdue?'#E24B4A':'#378ADD'}`, background: overdue?'#FFF0F0':'#F0F6FF', borderRadius:8, padding:'8px 10px', marginBottom:6 }}>
+                <div key={i} style={{ borderLeft:`3px solid ${overdue?'#E24B4A':'#378ADD'}`, background:overdue?'#FFF0F0':'#F0F6FF', borderRadius:8, padding:'8px 10px', marginBottom:6 }}>
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
                     <div style={{ flex:1 }}>
                       <div style={{ fontSize:11, fontWeight:600, color:'#1F4E79' }}>{locationRef.slice(0,38)}</div>
@@ -1104,7 +1091,7 @@ export default function App() {
                       {actionText && <div style={{ fontSize:10, color:'#EF9F27', marginTop:2 }}>⚡ {actionText}</div>}
                     </div>
                     <div style={{ textAlign:'right', marginLeft:8, flexShrink:0 }}>
-                      <div style={{ fontSize:10, fontWeight:700, color: overdue?'#E24B4A':'#378ADD' }}>{overdue?'🔴':'📅'} {formatDueDate(dueDate)}</div>
+                      <div style={{ fontSize:10, fontWeight:700, color:overdue?'#E24B4A':'#378ADD' }}>{overdue?'🔴':'📅'} {formatDueDate(dueDate)}</div>
                     </div>
                   </div>
                   <div style={{ display:'flex', gap:5, marginTop:6 }}>
@@ -1121,7 +1108,7 @@ export default function App() {
         <div style={{ background: '#fff', borderRadius: 12, padding: 14, border: '1px solid #E8ECF0' }}>
           <div style={{ fontWeight: 700, fontSize: 13, color: '#1F4E79', marginBottom: 10, display: 'flex', justifyContent: 'space-between' }}>
             <span>🗺️ RSA Health</span>
-            <span style={{ fontSize: 11, color: '#888' }}>click RSA to review</span>
+            <span style={{ fontSize: 11, color: '#888' }}>click to review</span>
           </div>
           <RSAHealthPanel allRows={allRows} courtCases={courtCases} neglectedCases={neglectedCases} cancellationCases={cancellationCases} />
         </div>
@@ -1181,13 +1168,17 @@ export default function App() {
                     const lecData = lecByAdvSrNo ? lecByAdvSrNo.get(advKey) : null;
                     const fvcData = fvcByAdvSrNo ? fvcByAdvSrNo.get(advKey) : null;
                     const enrichData = selectedStage === 'FVC Pending' ? fvcData : lecData;
-                    const pendency = enrichData ? parseInt(enrichData.pendency_of_days || enrichData.pendency || '0') : null;
-                    const lastDate = enrichData ? (enrichData.lec_last_date || enrichData.lec_letter_last_date || enrichData.fvc_last_date || '') : null;
-                    const letterSent = enrichData ? (enrichData.lec_letter_sent_on || enrichData.fvc_letter_sent_on || enrichData.letter_send || '') : null;
-                    const fileReceived = enrichData ? (enrichData.lec_file_received_in_office_yesno || enrichData.file_received || '') : null;
-                    const m1 = enrichData ? (enrichData.m1 || enrichData['m1'] || '') : null;
-                    const m2 = enrichData ? (enrichData.m2 || enrichData['m2'] || '') : null;
-                    const m3 = enrichData ? (enrichData.m3 || enrichData['m3'] || '') : null;
+
+                    // Apps Script normalises headers: "M-1" → "m_1", "M1" → "m1", "LEC Letter sent on" → "lec_letter_sent_on"
+                    const pendency = enrichData ? (enrichData.pendency_of_days || enrichData.pendencyofdays || '') : null;
+                    const pendencyNum = pendency ? parseInt(pendency) : null;
+                    const letterSent = enrichData ? (enrichData.lec_letter_sent_on || enrichData.fvc_letter_sent_on || enrichData.letter_send || enrichData.lettersend || '') : null;
+                    const lastDate = enrichData ? (enrichData.lec_last_date_ || enrichData.lec_letter_last_date || enrichData.fvc_last_date || enrichData.last_date_ || enrichData.lastdate || '') : null;
+                    const fileReceived = enrichData ? (enrichData.lec_file_received_in_office_ye || enrichData.file_received || enrichData.filereceived || '') : null;
+                    // Committee members — Apps Script turns "M-1" → "m_1", "M1" → "m1"
+                    const m1 = enrichData ? (enrichData.m_1 || enrichData.m1 || '') : null;
+                    const m2 = enrichData ? (enrichData.m_2 || enrichData.m2 || '') : null;
+                    const m3 = enrichData ? (enrichData.m_3 || enrichData.m3 || '') : null;
                     const enrichRemarks = enrichData ? (enrichData.remarks || '') : null;
                     return (
                       <div key={i} style={{
@@ -1220,12 +1211,12 @@ export default function App() {
                               )}
                               {lastDate && (
                                 <div style={{ fontSize: 10, color: '#666' }}>
-                                  📅 Last date: <span style={{ color: pendency < 0 ? '#E24B4A' : '#333', fontWeight: pendency < 0 ? 700 : 400 }}>{lastDate}</span>
+                                  📅 Last date: <span style={{ color: pendencyNum !== null && pendencyNum < 0 ? '#E24B4A' : '#333', fontWeight: pendencyNum !== null && pendencyNum < 0 ? 700 : 400 }}>{lastDate}</span>
                                 </div>
                               )}
-                              {pendency !== null && (
-                                <div style={{ fontSize: 10, fontWeight: 700, color: pendency < 0 ? '#E24B4A' : '#4CAF7D' }}>
-                                  {pendency < 0 ? `🔴 ${Math.abs(pendency)} days overdue` : `🟢 ${pendency} days remaining`}
+                              {pendencyNum !== null && (
+                                <div style={{ fontSize: 10, fontWeight: 700, color: pendencyNum < 0 ? '#E24B4A' : '#4CAF7D', gridColumn: '1 / -1' }}>
+                                  {pendencyNum < 0 ? `🔴 ${Math.abs(pendencyNum)} days overdue` : `🟢 ${pendencyNum} days remaining`}
                                 </div>
                               )}
                               {fileReceived && (
@@ -1234,19 +1225,31 @@ export default function App() {
                                 </div>
                               )}
                             </div>
+                            {/* Committee Members */}
                             {(m1 || m2 || m3) && (
-                              <div style={{ marginTop: 4 }}>
-                                <div style={{ fontSize: 9, color: '#999', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Committee</div>
-                                {m1 && <div style={{ fontSize: 10, color: '#555' }}>M1: {m1}</div>}
-                                {m2 && <div style={{ fontSize: 10, color: '#555' }}>M2: {m2}</div>}
-                                {m3 && m3 !== 'NA' && <div style={{ fontSize: 10, color: '#555' }}>M3: {m3}</div>}
+                              <div style={{ marginTop: 6, background: '#F0F4FA', borderRadius: 6, padding: '5px 7px' }}>
+                                <div style={{ fontSize: 9, color: '#1F4E79', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 }}>
+                                  {selectedStage === 'LEC Pending' ? '🏛️ LEC Committee' : '🏛️ FVC Committee'}
+                                </div>
+                                {m1 && <div style={{ fontSize: 10, color: '#333', marginBottom: 2 }}>M1: {m1}</div>}
+                                {m2 && <div style={{ fontSize: 10, color: '#333', marginBottom: 2 }}>M2: {m2}</div>}
+                                {m3 && m3 !== 'NA' && m3.trim() !== '' && <div style={{ fontSize: 10, color: '#333' }}>M3: {m3}</div>}
                               </div>
                             )}
+                            {!m1 && !m2 && (
+                              <div style={{ fontSize: 10, color: '#E24B4A', marginTop: 4 }}>⚠️ Committee not yet assigned</div>
+                            )}
                             {enrichRemarks && enrichRemarks.trim() && (
-                              <div style={{ fontSize: 10, color: '#888', marginTop: 3, fontStyle: 'italic' }}>
+                              <div style={{ fontSize: 10, color: '#888', marginTop: 4, fontStyle: 'italic' }}>
                                 📝 {enrichRemarks.slice(0, 100)}
                               </div>
                             )}
+                          </div>
+                        )}
+                        {/* No LEC/FVC data found */}
+                        {!enrichData && (selectedStage === 'LEC Pending' || selectedStage === 'FVC Pending') && (
+                          <div style={{ fontSize: 10, color: '#999', marginTop: 4 }}>
+                            ⚠️ Not yet in {selectedStage === 'LEC Pending' ? 'LEC' : 'FVC'} tab — check sheet
                           </div>
                         )}
                       </div>
