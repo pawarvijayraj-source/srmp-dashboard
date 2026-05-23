@@ -993,7 +993,6 @@ export default function App() {
         ))}
       </div>
 
-      {/* PARK MODAL */}
       {parkModal && (
         <ParkModal
           onCancel={() => setParkModal(null)}
@@ -1001,7 +1000,7 @@ export default function App() {
             const { todo, key } = parkModal;
             setParkModal(null);
             setTodoPendingActions(prev => ({ ...prev, [key]: 'PARKED' }));
-            const locationRef = todo.loirefno || todo.loi_ref_no || todo.advsrno || todo.adv_sr_no || '';
+            const locationRef = todo.loirefno||todo.loi_ref_no||todo.advsrno||todo.adv_sr_no||'';
             try {
               await fetch(APPS_SCRIPT_URL, { method:'POST', mode:'no-cors', headers:{'Content-Type':'application/json'},
                 body: JSON.stringify({ action:'upsert_writeback', data: {
@@ -1010,8 +1009,7 @@ export default function App() {
                   current_micro_stage: todo.currentmicrostage||todo.current_micro_stage||'',
                   previous_micro_stage:'', pending_owner:'Vijayraj', responsibility_type:'PERSONAL',
                   current_stage_start_date: todo.currentstagestartdate||'',
-                  target_due_date: newDueDate,
-                  last_meaningful_progress_date: new Date().toLocaleDateString('en-GB'),
+                  target_due_date: newDueDate, last_meaningful_progress_date: new Date().toLocaleDateString('en-GB'),
                   next_review_date: newDueDate, risk_level:'TRACKED',
                   escalation_reason: todo.escalationreason||todo.escalation_reason||'',
                   exception_flag:'', exception_type:'MEETING_NOTE', remarks: todo.remarks||'',
@@ -1035,9 +1033,7 @@ export default function App() {
           <div style={{ maxHeight: 340, overflowY: 'auto' }}>
             {visibleActions.length === 0 ? (
               <div style={{ textAlign: 'center', color: '#4CAF7D', padding: 20, fontSize: 13 }}>✅ All clear</div>
-            ) : (
-              visibleActions.map((row, i) => <ActionCard key={i} row={row} />)
-            )}
+            ) : visibleActions.map((row, i) => <ActionCard key={i} row={row} />)}
           </div>
         </div>
 
@@ -1052,17 +1048,15 @@ export default function App() {
           <div style={{ fontSize: 10, color: '#bbb', marginBottom: 8 }}>Overdue + today + 2 days · Park reschedules</div>
           <div style={{ maxHeight: 300, overflowY: 'auto' }}>
             {myTodos.filter(n => !todoPendingActions[`${n.advsrno||n.adv_sr_no||''}_${n.targetduedate||n.target_due_date||''}`]).length === 0 ? (
-              <div style={{ textAlign: 'center', color: '#999', padding: 20, fontSize: 12 }}>
-                No tasks due · <span style={{ fontSize: 11 }}>Search → add note with due date</span>
-              </div>
+              <div style={{ textAlign:'center', color:'#999', padding:20, fontSize:12 }}>No tasks due · Search → add note with due date</div>
             ) : myTodos.map((n, i) => {
-              const dueDate = n.targetduedate || n.target_due_date || '';
+              const dueDate = n.targetduedate||n.target_due_date||'';
               const todoKey = `${n.advsrno||n.adv_sr_no||''}_${dueDate}`;
               if (todoPendingActions[todoKey]) return null;
               const overdue = isDueDateOverdue(dueDate);
-              const noteText = n.remarks || '';
-              const actionText = n.escalationreason || n.escalation_reason || '';
-              const locationRef = n.loirefno || n.loi_ref_no || n.advsrno || n.adv_sr_no || '';
+              const noteText = n.remarks||'';
+              const actionText = n.escalationreason||n.escalation_reason||'';
+              const locationRef = n.loirefno||n.loi_ref_no||n.advsrno||n.adv_sr_no||'';
               const handleDone = async () => {
                 setTodoPendingActions(prev => ({ ...prev, [todoKey]: 'COMPLETED' }));
                 try {
@@ -1073,8 +1067,7 @@ export default function App() {
                       current_micro_stage: n.currentmicrostage||'', previous_micro_stage:'',
                       pending_owner:'Vijayraj', responsibility_type:'PERSONAL',
                       current_stage_start_date: n.currentstagestartdate||'',
-                      target_due_date: dueDate,
-                      last_meaningful_progress_date: new Date().toLocaleDateString('en-GB'),
+                      target_due_date: dueDate, last_meaningful_progress_date: new Date().toLocaleDateString('en-GB'),
                       next_review_date:'', risk_level:'COMPLETED',
                       escalation_reason: actionText, exception_flag:'', exception_type:'MEETING_NOTE',
                       remarks: noteText, updated_by:'Vijayraj', updated_on: new Date().toISOString(),
@@ -1169,17 +1162,22 @@ export default function App() {
                     const fvcData = fvcByAdvSrNo ? fvcByAdvSrNo.get(advKey) : null;
                     const enrichData = selectedStage === 'FVC Pending' ? fvcData : lecData;
 
-                    // Apps Script normalises headers: "M-1" → "m_1", "M1" → "m1", "LEC Letter sent on" → "lec_letter_sent_on"
-                    const pendency = enrichData ? (enrichData.pendency_of_days || enrichData.pendencyofdays || '') : null;
-                    const pendencyNum = pendency ? parseInt(pendency) : null;
-                    const letterSent = enrichData ? (enrichData.lec_letter_sent_on || enrichData.fvc_letter_sent_on || enrichData.letter_send || enrichData.lettersend || '') : null;
-                    const lastDate = enrichData ? (enrichData.lec_last_date_ || enrichData.lec_letter_last_date || enrichData.fvc_last_date || enrichData.last_date_ || enrichData.lastdate || '') : null;
-                    const fileReceived = enrichData ? (enrichData.lec_file_received_in_office_ye || enrichData.file_received || enrichData.filereceived || '') : null;
-                    // Committee members — Apps Script turns "M-1" → "m_1", "M1" → "m1"
-                    const m1 = enrichData ? (enrichData.m_1 || enrichData.m1 || '') : null;
-                    const m2 = enrichData ? (enrichData.m_2 || enrichData.m2 || '') : null;
-                    const m3 = enrichData ? (enrichData.m_3 || enrichData.m3 || '') : null;
-                    const enrichRemarks = enrichData ? (enrichData.remarks || '') : null;
+                    // Exact keys after Apps Script normaliseHeader:
+                    // "M-1"→"m1", "M1"→"m1", "M-2"→"m2", "M-3"→"m3"
+                    // "LEC last date"→"lec_last_date", "LEC Letter Last date"→"lec_letter_last_date"
+                    // "LEC Letter sent on"→"lec_letter_sent_on", "Letter Send"→"letter_send"
+                    // "FVC Letter sent on"→"fvc_letter_sent_on", "Last date"→"last_date"
+                    // "LEC File Received in office YES/NO"→"lec_file_received_in_office_yesno"
+                    // "Advertisement Sr No"→"advertisement_sr_no"
+                    const m1 = enrichData ? (enrichData.m1 || '') : '';
+                    const m2 = enrichData ? (enrichData.m2 || '') : '';
+                    const m3 = enrichData ? (enrichData.m3 || '') : '';
+                    const pendencyRaw = enrichData ? (enrichData.pendency_of_days || '') : '';
+                    const pendencyNum = pendencyRaw !== '' ? parseInt(pendencyRaw) : null;
+                    const letterSent = enrichData ? (enrichData.lec_letter_sent_on || enrichData.fvc_letter_sent_on || enrichData.letter_send || '') : '';
+                    const lastDate = enrichData ? (enrichData.lec_last_date || enrichData.lec_letter_last_date || enrichData.last_date || '') : '';
+                    const fileReceived = enrichData ? (enrichData.lec_file_received_in_office_yesno || enrichData.file_received || '') : '';
+                    const enrichRemarks = enrichData ? (enrichData.remarks || '') : '';
                     return (
                       <div key={i} style={{
                         borderLeft: `3px solid ${alertColor(alert?.level || 'grey')}`,
@@ -1203,54 +1201,35 @@ export default function App() {
                         {/* LEC/FVC enriched data */}
                         {enrichData && (selectedStage === 'LEC Pending' || selectedStage === 'FVC Pending') && (
                           <div style={{ marginTop: 5, paddingTop: 5, borderTop: '1px solid #eee' }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 3 }}>
-                              {letterSent && (
-                                <div style={{ fontSize: 10, color: '#666' }}>
-                                  📬 Letter: <span style={{ color: '#333' }}>{letterSent}</span>
-                                </div>
-                              )}
-                              {lastDate && (
-                                <div style={{ fontSize: 10, color: '#666' }}>
-                                  📅 Last date: <span style={{ color: pendencyNum !== null && pendencyNum < 0 ? '#E24B4A' : '#333', fontWeight: pendencyNum !== null && pendencyNum < 0 ? 700 : 400 }}>{lastDate}</span>
-                                </div>
-                              )}
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 3, marginBottom: 4 }}>
+                              {letterSent && <div style={{ fontSize: 10, color: '#666' }}>📬 Sent: <span style={{ color:'#333' }}>{letterSent}</span></div>}
+                              {lastDate && <div style={{ fontSize: 10, color: '#666' }}>📅 Last date: <span style={{ color: pendencyNum !== null && pendencyNum < 0 ? '#E24B4A' : '#333', fontWeight: pendencyNum !== null && pendencyNum < 0 ? 700 : 400 }}>{lastDate}</span></div>}
                               {pendencyNum !== null && (
-                                <div style={{ fontSize: 10, fontWeight: 700, color: pendencyNum < 0 ? '#E24B4A' : '#4CAF7D', gridColumn: '1 / -1' }}>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: pendencyNum < 0 ? '#E24B4A' : '#4CAF7D', gridColumn:'1/-1' }}>
                                   {pendencyNum < 0 ? `🔴 ${Math.abs(pendencyNum)} days overdue` : `🟢 ${pendencyNum} days remaining`}
                                 </div>
                               )}
-                              {fileReceived && (
-                                <div style={{ fontSize: 10, color: '#666' }}>
-                                  📁 File: <span style={{ color: fileReceived.toUpperCase().includes('YES') ? '#4CAF7D' : '#E24B4A' }}>{fileReceived}</span>
-                                </div>
-                              )}
+                              {fileReceived && <div style={{ fontSize: 10, color: '#666' }}>📁 File: <span style={{ color: fileReceived.toUpperCase().includes('YES') ? '#4CAF7D' : '#E24B4A' }}>{fileReceived}</span></div>}
                             </div>
-                            {/* Committee Members */}
-                            {(m1 || m2 || m3) && (
-                              <div style={{ marginTop: 6, background: '#F0F4FA', borderRadius: 6, padding: '5px 7px' }}>
-                                <div style={{ fontSize: 9, color: '#1F4E79', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 }}>
-                                  {selectedStage === 'LEC Pending' ? '🏛️ LEC Committee' : '🏛️ FVC Committee'}
+                            {(m1 || m2) ? (
+                              <div style={{ background:'#F0F4FA', borderRadius:6, padding:'5px 8px', marginTop:4 }}>
+                                <div style={{ fontSize:9, color:'#1F4E79', fontWeight:700, textTransform:'uppercase', letterSpacing:0.5, marginBottom:3 }}>
+                                  🏛️ {selectedStage === 'LEC Pending' ? 'LEC' : 'FVC'} Committee
                                 </div>
-                                {m1 && <div style={{ fontSize: 10, color: '#333', marginBottom: 2 }}>M1: {m1}</div>}
-                                {m2 && <div style={{ fontSize: 10, color: '#333', marginBottom: 2 }}>M2: {m2}</div>}
-                                {m3 && m3 !== 'NA' && m3.trim() !== '' && <div style={{ fontSize: 10, color: '#333' }}>M3: {m3}</div>}
+                                {m1 && <div style={{ fontSize:10, color:'#333', marginBottom:2 }}>M1: {m1}</div>}
+                                {m2 && <div style={{ fontSize:10, color:'#333', marginBottom:2 }}>M2: {m2}</div>}
+                                {m3 && m3 !== 'NA' && m3.trim() && <div style={{ fontSize:10, color:'#333' }}>M3: {m3}</div>}
                               </div>
-                            )}
-                            {!m1 && !m2 && (
-                              <div style={{ fontSize: 10, color: '#E24B4A', marginTop: 4 }}>⚠️ Committee not yet assigned</div>
+                            ) : (
+                              <div style={{ fontSize:10, color:'#E24B4A', marginTop:4 }}>⚠️ Committee not assigned yet</div>
                             )}
                             {enrichRemarks && enrichRemarks.trim() && (
-                              <div style={{ fontSize: 10, color: '#888', marginTop: 4, fontStyle: 'italic' }}>
-                                📝 {enrichRemarks.slice(0, 100)}
-                              </div>
+                              <div style={{ fontSize:10, color:'#888', marginTop:4, fontStyle:'italic' }}>📝 {enrichRemarks.slice(0,100)}</div>
                             )}
                           </div>
                         )}
-                        {/* No LEC/FVC data found */}
                         {!enrichData && (selectedStage === 'LEC Pending' || selectedStage === 'FVC Pending') && (
-                          <div style={{ fontSize: 10, color: '#999', marginTop: 4 }}>
-                            ⚠️ Not yet in {selectedStage === 'LEC Pending' ? 'LEC' : 'FVC'} tab — check sheet
-                          </div>
+                          <div style={{ fontSize:10, color:'#999', marginTop:4 }}>⚠️ Not in {selectedStage === 'LEC Pending' ? 'LEC' : 'FVC'} tab yet</div>
                         )}
                       </div>
                     );
